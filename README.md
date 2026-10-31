@@ -10,7 +10,9 @@ Portuguese (pt-BR).
 3. Solaris packs real-size modules into the area, then estimates monthly and
    lifetime production, the local kWh price and the payback.
 
-Everything is fetched from public APIs at runtime; nothing is stored.
+Data comes from public APIs. A small Node server keeps a local SQLite
+database that caches them and stores saved simulations, so a roof and its
+settings can be shared by link.
 
 ## Data sources
 
@@ -26,20 +28,29 @@ Everything is fetched from public APIs at runtime; nothing is stored.
 
 PVGIS (EU JRC) was considered, but its API does not allow browser (AJAX) calls.
 
-### ANEEL and CORS
+## Server and SQLite
 
-The app calls the ANEEL portal directly from the browser. If the portal
-doesn't send CORS headers, it falls back to the same-origin path `/aneel-api/…`,
-which `vite.config.ts` proxies to `https://dadosabertos.aneel.gov.br` in both
-`npm run dev` and `npm run preview`. For static hosting, add an equivalent
-rewrite. For example, on Netlify:
+The server (`server/`) uses Node's built-in `node:sqlite`, so there's no
+native module to compile. It exposes:
 
-```
-/aneel-api/*  https://dadosabertos.aneel.gov.br/:splat  200
-```
+| Endpoint | What it does |
+|---|---|
+| `GET /api/tariffs` | ANEEL residential B1 tariffs with history. Downloaded once a day and stored in the `tariffs` table. If ANEEL is down, it serves the last copy marked `stale`. |
+| `GET /api/flag` | Current tariff flag (`tariff_flags` table), refreshed daily |
+| `GET /api/solar?lat=&lng=` | NASA POWER climatology, cached per 0.1° cell (`solar_climatology` table). The climatology doesn't change, so the cache never expires. |
+| `POST /api/simulations` | Saves the drawn area and all settings and returns an id. The UI turns it into a `?sim=<id>` link. |
+| `GET /api/simulations/:id` | Loads a saved simulation |
 
-If ANEEL can't be reached at all, the tariff panel says so and lets the user
-type the price from their bill.
+Calling ANEEL from the server also avoids browser CORS limits. The browser
+uses the server first and falls back to the public APIs directly, so a static
+deploy without the server still works, minus saving and caching. The UI shows
+where each piece of data came from: local cache with its date, or a direct
+call.
+
+The database file defaults to `data/solaris.db` (git-ignored). Set
+`SOLARIS_DB` to change it and `PORT` for the production server (default
+8787). Node 22 prints an `ExperimentalWarning` for `node:sqlite`; it's
+harmless.
 
 ## How the estimate works
 
@@ -73,19 +84,28 @@ analysis and the distributor's approval.
 
 ## Development
 
+Requires Node.js ≥ 22.13.
+
 ```bash
 npm install
-npm run dev       # http://localhost:5173
-npm test          # unit tests (solar geometry, layout, finance, ANEEL parsing)
+npm run dev       # frontend + API (with SQLite) on http://localhost:5173
+npm test          # unit tests: solar geometry, layout, finance, ANEEL parsing, API + SQLite
 npm run lint
-npm run build && npm run preview
+npm run build
+npm start         # production: API + built frontend on http://localhost:8787
 ```
 
-Stack: React 19, TypeScript, Vite, react-leaflet, Leaflet-Geoman, Recharts.
+In development, a Vite plugin (`vite.config.ts`) mounts the API on the dev and
+preview servers, so there's one process and no proxy. `npm start` runs
+`server/index.ts`, which serves the same API plus `dist/`.
+
+Stack: React 19, TypeScript, Vite, react-leaflet, Leaflet-Geoman, Recharts,
+Node `node:sqlite`, tsx.
 
 ```
+server/         HTTP API, SQLite schema/store, production server
 src/
-  api/          NASA POWER, ANEEL (CKAN) and Nominatim clients
+  api/          NASA POWER, ANEEL (CKAN), Nominatim and Solaris-server clients
   data/         WEG/generic module catalogue, distributor hints, ICMS
   lib/          solar geometry, panel layout, PV production & finance (pure, tested)
   components/   map, settings cards, charts, results
@@ -101,3 +121,8 @@ src/
 - The Fio B share is a single editable percentage. ANEEL's *componentes
   tarifárias* dataset could provide the exact value per distributor.
 - Inverter sizing (e.g. WEG SIW line) isn't included yet.
+- Saved simulations have no accounts or expiry. Anyone with a link can open it.
+  The API has no rate limiting, which is fine locally but should be added before
+  public hosting.
+- Reference data (module catalogue, ICMS) still lives in code. It could move
+  into SQLite if it needs editing without a deploy.

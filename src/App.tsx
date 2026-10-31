@@ -1,8 +1,9 @@
 import type L from 'leaflet';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { fetchCurrentFlag, fetchResidentialTariffs, tariffTrend } from './api/aneel';
-import { fetchSolarClimatology } from './api/nasaPower';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { tariffTrend } from './api/aneel';
+import { isAbort } from './api/http';
 import { reverseGeocode, type Place } from './api/nominatim';
+import { loadFlag, loadSimulation, loadSolar, loadTariffs, saveSimulation } from './api/solaris';
 import { CashFlowChart, IrradianceChart, LifetimeProductionChart, MonthlyProductionChart, TariffHistoryChart } from './components/charts/Charts';
 import { Section } from './components/controls';
 import { FinanceSettingsCard } from './components/FinanceSettingsCard';
@@ -17,6 +18,7 @@ import { CUSTOM_PANEL_ID, makeCustomPanel, PANELS } from './data/panels';
 import { useAsync } from './hooks/useAsync';
 import { fmtNumber } from './lib/format';
 import { centroidOf, localFrame, type LatLng } from './lib/geometry';
+import { mergeSettings, validateSavedSimulation, type SavedSimulation } from './lib/savedSimulation';
 import { planLayout, simulate, type SolarInput } from './lib/simulate';
 import { annualFromDailyMeans, estimateGhiFromLatitude, monthlyExtraterrestrial } from './lib/solar';
 import {
@@ -39,6 +41,19 @@ function roundedKey(lat: number, lng: number): string {
   return `${lat.toFixed(2)},${lng.toFixed(2)}`;
 }
 
+type ShareState =
+  | { status: 'idle' }
+  | { status: 'busy'; message: string }
+  | { status: 'done'; message: string; url: string }
+  | { status: 'error'; message: string };
+
+function shareUrl(id: string): string {
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.searchParams.set('sim', id);
+  return url.toString();
+}
+
 export default function App() {
   const [polygon, setPolygon] = useState<LatLng[] | null>(null);
   const [searchSite, setSearchSite] = useState<{ lat: number; lng: number; label: string } | null>(null);
@@ -47,6 +62,10 @@ export default function App() {
   const [tariffSettings, setTariffSettings] = useState<TariffSettings>(DEFAULT_TARIFF_SETTINGS);
   const [financeSettings, setFinanceSettings] = useState<FinanceSettings>(DEFAULT_FINANCE_SETTINGS);
   const [geoError, setGeoError] = useState<string | null>(null);
+  const [sharedId] = useState(() => new URLSearchParams(window.location.search).get('sim'));
+  const [share, setShare] = useState<ShareState>(() =>
+    sharedId ? { status: 'busy', message: 'Carregando simulação compartilhada…' } : { status: 'idle' },
+  );
   const mapRef = useRef<L.Map | null>(null);
 
   const updatePanel = useCallback((patch: Partial<PanelSettings>) => setPanelSettings((s) => ({ ...s, ...patch })), []);
@@ -68,7 +87,7 @@ export default function App() {
   const siteKey = site ? roundedKey(site.lat, site.lng) : null;
   const solarState = useAsync(siteKey, async (signal) => {
     const [lat, lng] = siteKey!.split(',').map(Number);
-    return { key: siteKey!, ...(await fetchSolarClimatology(lat, lng, signal)) };
+    return { key: siteKey!, ...(await loadSolar(lat, lng, signal)) };
   });
   const placeState = useAsync(siteKey, (signal) => {
     const [lat, lng] = siteKey!.split(',').map(Number);
@@ -82,27 +101,29 @@ export default function App() {
     return { lat: site.lat, ghi: estimateGhiFromLatitude(site.lat), temperature: Array(12).fill(25) };
   }, [site, nasa]);
   const solarSource = nasa
-    ? `NASA POWER${nasa.period ? ` (${nasa.period})` : ''}`
+    ? `NASA POWER${nasa.period ? ` (${nasa.period})` : ''}${nasa.via === 'server' ? ' · cache local' : ''}`
     : solarState.status === 'error'
       ? 'estimativa pela latitude'
       : 'estimativa pela latitude (aguardando NASA POWER)';
 
   // ---------- Tariff ----------
-  const tariffsState = useAsync('tariffs', fetchResidentialTariffs);
-  const flagState = useAsync('flag', fetchCurrentFlag);
+  const tariffsState = useAsync('tariffs', loadTariffs);
+  const flagState = useAsync('flag', loadFlag);
+  const tariffList = tariffsState.data?.tariffs;
+  const currentFlag = flagState.data?.flag ?? null;
   const place = placeState.status === 'success' ? placeState.data : undefined;
 
   const distributor = useMemo(() => {
     if (tariffSettings.distributorPinned) return tariffSettings.distributor;
-    const agents = tariffsState.data?.map((t) => t.distributor) ?? [];
+    const agents = tariffList?.map((t) => t.distributor) ?? [];
     return guessDistributor(agents, place?.uf ?? null, place?.city ?? null) ?? tariffSettings.distributor;
-  }, [tariffSettings.distributorPinned, tariffSettings.distributor, tariffsState.data, place]);
+  }, [tariffSettings.distributorPinned, tariffSettings.distributor, tariffList, place]);
 
   const pricing: Pricing = useMemo(() => {
-    const tariff = tariffsState.data?.find((t) => t.distributor === distributor) ?? null;
+    const tariff = tariffList?.find((t) => t.distributor === distributor) ?? null;
     const icmsPct = tariffSettings.icmsPct ?? (place?.uf ? ICMS_BY_UF[place.uf] : undefined) ?? FALLBACK_ICMS_PCT;
     const taxRate = (icmsPct + tariffSettings.pisCofinsPct) / 100;
-    const flagSurcharge = tariffSettings.includeFlag && flagState.data ? flagState.data.surcharge : 0;
+    const flagSurcharge = tariffSettings.includeFlag && currentFlag ? currentFlag.surcharge : 0;
     const baseTariff = tariff?.current.total ?? null;
     const computed = baseTariff !== null && taxRate < 1 ? (baseTariff + flagSurcharge) / (1 - taxRate) : null;
     return {
@@ -115,7 +136,7 @@ export default function App() {
       finalPrice: tariffSettings.manualPrice ?? computed ?? EXAMPLE_PRICE_PER_KWH,
       trend: tariff ? tariffTrend(tariff.history) : null,
     };
-  }, [tariffsState.data, distributor, tariffSettings, place, flagState.data]);
+  }, [tariffList, distributor, tariffSettings, place, currentFlag]);
 
   const tariffIncrease =
     financeSettings.tariffIncreasePct !== null
@@ -154,6 +175,57 @@ export default function App() {
       startYear: START_YEAR,
     });
   }, [plan, solar, panel, panelSettings, financeSettings, pricing.finalPrice, tariffIncrease]);
+
+  // ---------- Saved simulations ----------
+  // Opening a ?sim=<id> link restores the area and every setting once.
+  useEffect(() => {
+    if (!sharedId) return;
+    const controller = new AbortController();
+    loadSimulation(sharedId, controller.signal).then(
+      (saved) => {
+        const invalid = validateSavedSimulation(saved);
+        if (invalid) throw new Error(invalid);
+        setPolygon(saved.polygon);
+        setSearchSite(saved.site);
+        setPanelSettings(mergeSettings(DEFAULT_PANEL_SETTINGS, saved.panel));
+        setTariffSettings(mergeSettings(DEFAULT_TARIFF_SETTINGS, saved.tariff));
+        setFinanceSettings(mergeSettings(DEFAULT_FINANCE_SETTINGS, saved.finance));
+        setShare({ status: 'done', message: 'Simulação compartilhada carregada.', url: shareUrl(sharedId) });
+      },
+      (err: unknown) => {
+        if (isAbort(err)) return;
+        setShare({ status: 'error', message: `Não foi possível abrir a simulação “${sharedId}”: ${err instanceof Error ? err.message : err}` });
+      },
+    );
+    return () => controller.abort();
+  }, [sharedId]);
+
+  const save = useCallback(async () => {
+    if (!polygon) return;
+    const simulation: SavedSimulation = {
+      version: 1,
+      polygon,
+      site: searchSite,
+      panel: { ...panelSettings },
+      tariff: { ...tariffSettings },
+      finance: { ...financeSettings },
+    };
+    setShare({ status: 'busy', message: 'Salvando…' });
+    try {
+      const url = shareUrl(await saveSimulation(simulation));
+      window.history.replaceState(null, '', url);
+      const copied = await navigator.clipboard?.writeText(url).then(
+        () => true,
+        () => false,
+      );
+      setShare({ status: 'done', message: copied ? 'Simulação salva. Link copiado:' : 'Simulação salva. Link:', url });
+    } catch (err) {
+      setShare({
+        status: 'error',
+        message: `Não foi possível salvar (${err instanceof Error ? err.message : err}). Salvar requer o servidor do Solaris (npm run dev ou npm start).`,
+      });
+    }
+  }, [polygon, searchSite, panelSettings, tariffSettings, financeSettings]);
 
   // ---------- Actions ----------
   const selectPlace = useCallback((p: Place) => {
@@ -240,6 +312,11 @@ export default function App() {
                   Apagar área
                 </button>
               )}
+              {polygon && (
+                <button type="button" className="btn btn-small" onClick={save} disabled={share.status === 'busy'}>
+                  Salvar e compartilhar
+                </button>
+              )}
               <span className="spacer" />
               {place?.city && (
                 <span className="hint">
@@ -249,6 +326,12 @@ export default function App() {
               )}
             </div>
             {geoError && <p className="notice notice-error">{geoError}</p>}
+            {share.status !== 'idle' && (
+              <p className={`notice${share.status === 'error' ? ' notice-error' : ''}`} role="status">
+                {share.message}{' '}
+                {share.status === 'done' && <a href={share.url}>{share.url}</a>}
+              </p>
+            )}
             <MapView
               polygon={polygon}
               onPolygonChange={setPolygon}

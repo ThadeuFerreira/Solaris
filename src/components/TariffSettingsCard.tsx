@@ -1,6 +1,7 @@
-import { FLAG_DATASET_URL, TARIFF_DATASET_URL, type DistributorTariff, type FlagStatus } from '../api/aneel';
+import { FLAG_DATASET_URL, TARIFF_DATASET_URL, type DistributorTariff } from '../api/aneel';
+import type { FlagData, Provenance, TariffData } from '../api/solaris';
 import type { AsyncState } from '../hooks/useAsync';
-import { fmtBRL, fmtDate, fmtMonthYear, fmtNumber, fmtPct } from '../lib/format';
+import { fmtBRL, fmtDate, fmtDateTime, fmtMonthYear, fmtNumber, fmtPct } from '../lib/format';
 import type { TariffSettings } from '../model';
 import { Check, NumberField, Section } from './controls';
 
@@ -28,14 +29,15 @@ const FLAG_COLORS: Record<string, string> = {
 interface Props {
   settings: TariffSettings;
   onChange: (patch: Partial<TariffSettings>) => void;
-  tariffs: AsyncState<DistributorTariff[]> & { retry: () => void };
-  flag: AsyncState<FlagStatus> & { retry: () => void };
+  tariffs: AsyncState<TariffData> & { retry: () => void };
+  flag: AsyncState<FlagData> & { retry: () => void };
   pricing: Pricing;
   placeLabel: string | null;
 }
 
 export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing, placeLabel }: Props) {
-  const list = tariffs.data ?? [];
+  const list = tariffs.data?.tariffs ?? [];
+  const currentFlag = flag.data?.flag ?? null;
   const current = pricing.tariff?.current;
   const manual = settings.manualPrice !== null;
 
@@ -95,6 +97,7 @@ export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing,
           <a href={TARIFF_DATASET_URL} target="_blank" rel="noreferrer">
             ANEEL Dados Abertos
           </a>
+          {tariffs.data && <ProvenanceNote data={tariffs.data} />}
         </p>
       )}
 
@@ -122,12 +125,12 @@ export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing,
       </p>
 
       <div className="field">
-        {flag.data ? (
+        {currentFlag ? (
           <Check checked={settings.includeFlag} onChange={(includeFlag) => onChange({ includeFlag })}>
-            <span className="status-dot" style={{ background: FLAG_COLORS[flag.data.name] }} aria-hidden />
-            Bandeira <strong>{flag.data.rawName || flag.data.name}</strong> em {fmtMonthYear(flag.data.month)}
-            {flag.data.surcharge > 0 ? ` (+${fmtBRL(flag.data.surcharge * 100, 2)} a cada 100 kWh)` : ''} — incluir no
-            preço
+            <span className="status-dot" style={{ background: FLAG_COLORS[currentFlag.name] }} aria-hidden />
+            Bandeira <strong>{currentFlag.rawName || currentFlag.name}</strong> em {fmtMonthYear(currentFlag.month)}
+            {currentFlag.surcharge > 0 ? ` (+${fmtBRL(currentFlag.surcharge * 100, 2)} a cada 100 kWh)` : ''} — incluir
+            no preço
           </Check>
         ) : flag.status === 'error' ? (
           <div className="notice notice-row">
@@ -139,12 +142,13 @@ export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing,
         ) : (
           <p className="hint">Consultando bandeira tarifária…</p>
         )}
-        {flag.data && (
+        {flag.data && currentFlag && (
           <p className="source">
             <a href={FLAG_DATASET_URL} target="_blank" rel="noreferrer">
               ANEEL — Bandeiras tarifárias
             </a>
-            {!flag.data.surchargeFromApi && ' · adicional pelos valores vigentes desde 2025'}
+            {!currentFlag.surchargeFromApi && ' · adicional pelos valores vigentes desde 2025'}
+            <ProvenanceNote data={flag.data} />
           </p>
         )}
       </div>
@@ -172,5 +176,17 @@ export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing,
         </p>
       )}
     </Section>
+  );
+}
+
+function ProvenanceNote({ data }: { data: Provenance }) {
+  if (data.via === 'direct') return <> · consulta direta</>;
+  if (!data.fetchedAt) return null;
+  return (
+    <>
+      {' '}
+      · cache local de {fmtDateTime(data.fetchedAt)}
+      {data.stale && ' (ANEEL indisponível agora; usando a última cópia)'}
+    </>
   );
 }

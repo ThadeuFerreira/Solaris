@@ -32,6 +32,12 @@ export function fmtDate(iso: string): string {
   return d ? `${d}/${m}/${y}` : iso;
 }
 
+const dateTime = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+
+export function fmtDateTime(iso: string): string {
+  return dateTime.format(new Date(iso));
+}
+
 export function fmtMonthYear(iso: string): string {
   const [y, m] = iso.split('-');
   const names = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];

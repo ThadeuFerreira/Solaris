@@ -19,8 +19,13 @@ export async function fetchJson<T>(url: string, { signal, timeoutMs = 20000 }: F
   signal?.addEventListener('abort', onAbort, { once: true });
   try {
     const res = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new HttpError(res.status, `HTTP ${res.status} em ${url.split('?')[0]}`);
     const type = res.headers.get('content-type') ?? '';
+    if (!res.ok) {
+      // The Solaris server explains its errors in a JSON { error } body.
+      const body: unknown = type.includes('json') ? await res.json().catch(() => null) : null;
+      const detail = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' ? body.error : null;
+      throw new HttpError(res.status, detail ?? `HTTP ${res.status} em ${url.split('?')[0]}`);
+    }
     if (!type.includes('json')) throw new HttpError(res.status, `Resposta não é JSON (${type || 'sem tipo'})`);
     return (await res.json()) as T;
   } finally {

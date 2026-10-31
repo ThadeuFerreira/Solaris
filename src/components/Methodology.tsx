@@ -70,6 +70,10 @@ export function Methodology() {
         <li>Irradiação e temperatura: NASA POWER.</li>
         <li>Tarifas e bandeiras: ANEEL Dados Abertos (CKAN).</li>
         <li>
+          Cache local: o servidor do Solaris guarda tarifas e bandeiras (atualizadas a cada 24 h), a irradiação da NASA e
+          as simulações salvas em um banco SQLite.
+        </li>
+        <li>
           Módulos WEG: datasheets oficiais em{' '}
           <a href="https://www.weg.net/" target="_blank" rel="noreferrer">
             weg.net

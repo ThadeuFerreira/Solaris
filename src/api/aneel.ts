@@ -3,13 +3,13 @@
 //    https://dadosabertos.aneel.gov.br/dataset/tarifas-distribuidoras-energia-eletrica
 //  - Bandeiras tarifárias (acionamento)
 //    https://dadosabertos.aneel.gov.br/dataset/bandeiras-tarifarias
+//
+// Used by the Solaris server (which caches the results in SQLite) and, when
+// that server is unreachable, directly by the browser.
 
-import { fetchJson, HttpError, isAbort } from './http';
+import { fetchJson, isAbort } from './http';
 
-const DIRECT_BASE = 'https://dadosabertos.aneel.gov.br/api/3/action';
-// Same-origin fallback served by the Vite dev/preview proxy (see vite.config.ts)
-// in case the portal does not send CORS headers to the browser.
-const PROXY_BASE = '/aneel-api/api/3/action';
+const BASE = 'https://dadosabertos.aneel.gov.br/api/3/action';
 
 export const TARIFF_RESOURCE_ID = 'fcf2906c-7c32-4b9b-a637-054e7a5234f4';
 export const FLAG_RESOURCE_ID = '0591b8f6-fe54-437b-b72b-1aa2efd46e42';
@@ -24,27 +24,11 @@ interface CkanResponse {
   result: { records: CkanRecord[]; total?: number };
 }
 
-let workingBase: string | null = null;
-
 async function datastoreSearch(params: Record<string, string>, signal?: AbortSignal): Promise<CkanRecord[]> {
   const qs = new URLSearchParams(params).toString();
-  const bases = workingBase ? [workingBase] : [DIRECT_BASE, PROXY_BASE];
-  let lastError: unknown;
-  for (const base of bases) {
-    try {
-      const data = await fetchJson<CkanResponse>(`${base}/datastore_search?${qs}`, { signal, timeoutMs: 30000 });
-      if (!data.success) throw new Error('ANEEL: consulta não foi aceita');
-      workingBase = base;
-      return data.result.records;
-    } catch (err) {
-      if (isAbort(err)) throw err;
-      lastError = err;
-      // A 4xx from the portal itself means the query is wrong; the proxy would
-      // answer the same. Network/CORS failures fall through to the proxy.
-      if (err instanceof HttpError && err.status >= 400 && err.status < 500 && base === DIRECT_BASE) throw err;
-    }
-  }
-  throw lastError;
+  const data = await fetchJson<CkanResponse>(`${BASE}/datastore_search?${qs}`, { signal, timeoutMs: 30000 });
+  if (!data.success) throw new Error('ANEEL: consulta não foi aceita');
+  return data.result.records;
 }
 
 /** Runs the first query variant that returns rows; later variants are fallbacks. */
@@ -113,10 +97,10 @@ export interface DistributorTariff {
 }
 
 /**
- * Groups raw tariff rows into one residential B1 conventional tariff per
+ * Reduces raw tariff rows to one residential B1 conventional tariff per
  * distributor and validity period.
  */
-export function buildTariffs(records: CkanRecord[], today = new Date().toISOString().slice(0, 10)): DistributorTariff[] {
+export function parseTariffRecords(records: CkanRecord[]): Map<string, TariffPoint[]> {
   const byDistributor = new Map<string, Map<string, { point: TariffPoint; score: number }>>();
 
   for (const r of records) {
@@ -155,14 +139,33 @@ export function buildTariffs(records: CkanRecord[], today = new Date().toISOStri
     if (!existing || score > existing.score) periods.set(start, { point, score });
   }
 
-  const result: DistributorTariff[] = [];
+  const result = new Map<string, TariffPoint[]>();
   for (const [distributor, periods] of byDistributor) {
-    const history = [...periods.values()].map((p) => p.point).sort((a, b) => a.start.localeCompare(b.start));
+    result.set(
+      distributor,
+      [...periods.values()].map((p) => p.point),
+    );
+  }
+  return result;
+}
+
+/** Picks the tariff in force today for each distributor and sorts its history. */
+export function assembleTariffs(
+  byDistributor: Map<string, TariffPoint[]>,
+  today = new Date().toISOString().slice(0, 10),
+): DistributorTariff[] {
+  const result: DistributorTariff[] = [];
+  for (const [distributor, points] of byDistributor) {
+    const history = [...points].sort((a, b) => a.start.localeCompare(b.start));
     const valid = history.filter((p) => p.start <= today);
     const current = valid.at(-1) ?? history.at(-1);
     if (current) result.push({ distributor, current, history: valid.length ? valid : history });
   }
   return result.sort((a, b) => a.distributor.localeCompare(b.distributor, 'pt-BR'));
+}
+
+export function buildTariffs(records: CkanRecord[], today?: string): DistributorTariff[] {
+  return assembleTariffs(parseTariffRecords(records), today);
 }
 
 /**
@@ -180,7 +183,8 @@ export function tariffTrend(history: TariffPoint[], years = 8): number | null {
   return (last.total / first.total) ** (1 / span) - 1;
 }
 
-export async function fetchResidentialTariffs(signal?: AbortSignal): Promise<DistributorTariff[]> {
+/** Downloads the full residential B1 history for every distributor. */
+export async function fetchTariffRecords(signal?: AbortSignal): Promise<Map<string, TariffPoint[]>> {
   const filters = {
     DscBaseTarifaria: 'Tarifa de Aplicação',
     DscSubGrupo: 'B1',
@@ -196,9 +200,13 @@ export async function fetchResidentialTariffs(signal?: AbortSignal): Promise<Dis
     [query({ ...filters, DscSubClasse: 'Residencial' }, true), query(filters, true), query(filters, false)],
     signal,
   );
-  const tariffs = buildTariffs(records);
-  if (tariffs.length === 0) throw new Error('ANEEL: nenhuma tarifa residencial encontrada');
-  return tariffs;
+  const parsed = parseTariffRecords(records);
+  if (parsed.size === 0) throw new Error('ANEEL: nenhuma tarifa residencial encontrada');
+  return parsed;
+}
+
+export async function fetchResidentialTariffs(signal?: AbortSignal): Promise<DistributorTariff[]> {
+  return assembleTariffs(await fetchTariffRecords(signal));
 }
 
 export type FlagName = 'Verde' | 'Amarela' | 'Vermelha P1' | 'Vermelha P2' | 'Escassez hídrica';
@@ -242,38 +250,56 @@ export function surchargeToKWh(value: number, flag: FlagName): number {
   );
 }
 
-export function pickCurrentFlag(records: CkanRecord[], today = new Date().toISOString().slice(0, 10)): FlagStatus | null {
-  const month = today.slice(0, 7);
-  const rows = records
-    .map((r) => ({ r, month: isoDate(field(r, 'DatCompetencia')) }))
-    .filter((x) => x.month && x.month.slice(0, 7) <= month)
-    .sort((a, b) => b.month.localeCompare(a.month));
-  const latest = rows[0];
-  if (!latest) return null;
-  const rawName = str(field(latest.r, 'NomBandeiraAcionada'));
-  const name = normaliseFlag(rawName);
-  // The surcharge column name has varied (VlrAdicionalBandeira, …RSMWh).
-  const surchargeKey = Object.keys(latest.r).find((k) => /^VlrAdicional/i.test(k));
-  const raw = surchargeKey ? parseAneelNumber(latest.r[surchargeKey]) : null;
-  const fromApi = raw !== null && raw >= 0;
-  return {
-    month: latest.month,
-    name,
-    rawName,
-    surcharge: fromApi ? surchargeToKWh(raw, name) : DEFAULT_FLAG_SURCHARGE[name],
-    surchargeFromApi: fromApi,
-  };
+/** Normalises flag rows; months without a date are dropped. */
+export function parseFlagRecords(records: CkanRecord[]): FlagStatus[] {
+  const flags: FlagStatus[] = [];
+  for (const r of records) {
+    const month = isoDate(field(r, 'DatCompetencia'));
+    if (!month) continue;
+    const rawName = str(field(r, 'NomBandeiraAcionada'));
+    const name = normaliseFlag(rawName);
+    // The surcharge column name has varied (VlrAdicionalBandeira, …RSMWh).
+    const surchargeKey = Object.keys(r).find((k) => /^VlrAdicional/i.test(k));
+    const raw = surchargeKey ? parseAneelNumber(r[surchargeKey]) : null;
+    const fromApi = raw !== null && raw >= 0;
+    flags.push({
+      month,
+      name,
+      rawName,
+      surcharge: fromApi ? surchargeToKWh(raw, name) : DEFAULT_FLAG_SURCHARGE[name],
+      surchargeFromApi: fromApi,
+    });
+  }
+  return flags;
 }
 
-export async function fetchCurrentFlag(signal?: AbortSignal): Promise<FlagStatus> {
+/** The flag for the current month, ignoring flags already announced for later months. */
+export function pickFlag(flags: FlagStatus[], today = new Date().toISOString().slice(0, 10)): FlagStatus | null {
+  const month = today.slice(0, 7);
+  return (
+    flags
+      .filter((f) => f.month.slice(0, 7) <= month)
+      .sort((a, b) => b.month.localeCompare(a.month))[0] ?? null
+  );
+}
+
+export function pickCurrentFlag(records: CkanRecord[], today?: string): FlagStatus | null {
+  return pickFlag(parseFlagRecords(records), today);
+}
+
+export async function fetchFlagRecords(signal?: AbortSignal): Promise<FlagStatus[]> {
   const records = await firstNonEmpty(
     [
-      { resource_id: FLAG_RESOURCE_ID, sort: 'DatCompetencia desc', limit: '6' },
+      { resource_id: FLAG_RESOURCE_ID, sort: 'DatCompetencia desc', limit: '24' },
       { resource_id: FLAG_RESOURCE_ID, limit: '1000' },
     ],
     signal,
   );
-  const flag = pickCurrentFlag(records);
+  return parseFlagRecords(records);
+}
+
+export async function fetchCurrentFlag(signal?: AbortSignal): Promise<FlagStatus> {
+  const flag = pickFlag(await fetchFlagRecords(signal));
   if (!flag) throw new Error('ANEEL: sem dados de bandeira');
   return flag;
 }
