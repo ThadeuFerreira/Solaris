@@ -94,6 +94,17 @@ function segmentsIntersect(p1: Point, p2: Point, q1: Point, q2: Point): boolean 
   return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
 }
 
+export function simplePolygon(points: LatLng[]): boolean {
+  if (points.length < 3 || points.length > 500) return false;
+  const frame = localFrame(centroidOf(points));
+  const p = points.map(frame.toLocal);
+  for (let i = 0; i < p.length; i++) for (let j = i + 1; j < p.length; j++) {
+    if (j === i + 1 || (i === 0 && j === p.length - 1)) continue;
+    if (segmentsIntersect(p[i], p[(i + 1) % p.length], p[j], p[(j + 1) % p.length])) return false;
+  }
+  return Math.abs(signedArea(p)) > 0.01;
+}
+
 function pointSegmentDistance(p: Point, a: Point, b: Point): number {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -109,9 +120,9 @@ function pointSegmentDistance(p: Point, a: Point, b: Point): number {
  */
 function rectFits(rect: Point[], poly: Point[], clearance: number): boolean {
   for (const c of rect) if (!pointInPolygon(c, poly)) return false;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < rect.length; i++) {
     const r1 = rect[i];
-    const r2 = rect[(i + 1) % 4];
+    const r2 = rect[(i + 1) % rect.length];
     for (let j = 0; j < poly.length; j++) {
       const p1 = poly[j];
       const p2 = poly[(j + 1) % poly.length];
@@ -123,6 +134,19 @@ function rectFits(rect: Point[], poly: Point[], clearance: number): boolean {
     }
   }
   return true;
+}
+
+function polygonsOverlap(a: Point[], b: Point[]): boolean {
+  if (a.some((p) => pointInPolygon(p, b)) || b.some((p) => pointInPolygon(p, a))) return true;
+  return a.some((p, i) => b.some((q, j) => segmentsIntersect(p, a[(i + 1) % a.length], q, b[(j + 1) % b.length])));
+}
+
+/** Tests whether all infrastructure footprints fit inside the selected area. */
+export function footprintsInside(area: LatLng[], footprints: LatLng[][]): boolean {
+  if (area.length < 3 || !footprints.length) return false;
+  const frame = localFrame(centroidOf(area));
+  const poly = area.map(frame.toLocal);
+  return footprints.every((shape) => shape.length >= 3 && rectFits(shape.map(frame.toLocal), poly, 0));
 }
 
 export interface LayoutOptions {
@@ -138,13 +162,11 @@ export interface LayoutOptions {
   setbackM: number;
   /** Compass bearing of the across-row direction (the way panels face). */
   bearingDeg: number;
-  /** Safety cap on the number of panels to place. */
-  maxPanels?: number;
+  exclusions?: LatLng[][];
 }
 
 export interface Layout {
   panels: LatLng[][];
-  truncated: boolean;
 }
 
 /**
@@ -152,8 +174,7 @@ export interface Layout {
  * offsets are tried and the one that fits the most panels is kept.
  */
 export function layoutPanels(points: LatLng[], opts: LayoutOptions): Layout {
-  const maxPanels = opts.maxPanels ?? 5000;
-  if (points.length < 3 || opts.alongRowM <= 0 || opts.acrossRowM <= 0) return { panels: [], truncated: false };
+  if (points.length < 3 || opts.alongRowM <= 0 || opts.acrossRowM <= 0) return { panels: [] };
 
   const frame = localFrame(centroidOf(points));
   const b = opts.bearingDeg * DEG;
@@ -164,6 +185,7 @@ export function layoutPanels(points: LatLng[], opts: LayoutOptions): Layout {
   const fromUV = (q: Point): Point => ({ x: q.x * u.x + q.y * v.x, y: q.x * u.y + q.y * v.y });
 
   const poly = points.map((p) => toUV(frame.toLocal(p)));
+  const exclusions = (opts.exclusions ?? []).map((shape) => shape.map((p) => toUV(frame.toLocal(p))));
   const minU = Math.min(...poly.map((p) => p.x));
   const maxU = Math.max(...poly.map((p) => p.x));
   const minV = Math.min(...poly.map((p) => p.y));
@@ -189,14 +211,13 @@ export function layoutPanels(points: LatLng[], opts: LayoutOptions): Layout {
             { x: u0 + opts.alongRowM, y: v0 + opts.acrossRowM },
             { x: u0, y: v0 + opts.acrossRowM },
           ];
-          if (rectFits(rect, poly, opts.setbackM)) found.push(rect);
+          if (rectFits(rect, poly, opts.setbackM) && !exclusions.some((shape) => polygonsOverlap(rect, shape))) found.push(rect);
         }
       }
       if (found.length > best.length) best = found;
     }
   }
 
-  const truncated = best.length > maxPanels;
-  const panels = best.slice(0, maxPanels).map((rect) => rect.map((q) => frame.toLatLng(fromUV(q))));
-  return { panels, truncated };
+  const panels = best.map((rect) => rect.map((q) => frame.toLatLng(fromUV(q))));
+  return { panels };
 }

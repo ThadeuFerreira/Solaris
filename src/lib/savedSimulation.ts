@@ -3,6 +3,7 @@
 // so older saves keep working when new settings are added.
 
 import type { LatLng } from './geometry';
+import type { Infrastructure } from './infrastructure';
 
 export interface SavedSimulation {
   version: 1;
@@ -11,6 +12,7 @@ export interface SavedSimulation {
   panel: Record<string, unknown>;
   tariff: Record<string, unknown>;
   finance: Record<string, unknown>;
+  infrastructure?: Infrastructure[];
 }
 
 export const MAX_SIMULATION_BYTES = 64 * 1024;
@@ -46,6 +48,15 @@ export function validateSavedSimulation(v: unknown): string | null {
   }
   for (const key of ['panel', 'tariff', 'finance'] as const) {
     if (!isPlainObject(v[key])) return `configuração "${key}" inválida`;
+  }
+  if (v.infrastructure !== undefined) {
+    if (!Array.isArray(v.infrastructure) || v.infrastructure.length > 100) return 'infraestrutura inválida';
+    for (const item of v.infrastructure) {
+      if (!isPlainObject(item) || typeof item.width !== 'number' || !Number.isFinite(item.width) || item.width <= 0 || item.width > 100) return 'infraestrutura inválida';
+      if (item.type === 'road') {
+        if (!Array.isArray(item.points) || item.points.length !== 3 || !item.points.every(isLatLng)) return 'estrada inválida';
+      } else if ((item.type !== 'transformer' && item.type !== 'rectifier' && item.type !== 'pole') || !isLatLng(item.center) || typeof item.length !== 'number' || !Number.isFinite(item.length) || item.length <= 0 || item.length > 100) return 'infraestrutura inválida';
+    }
   }
   return null;
 }

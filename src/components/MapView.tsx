@@ -4,6 +4,8 @@ import L from 'leaflet';
 import { useEffect, useMemo, useRef } from 'react';
 import { CircleMarker, LayersControl, MapContainer, TileLayer, useMap } from 'react-leaflet';
 import type { LatLng } from '../lib/geometry';
+import type { Infrastructure } from '../lib/infrastructure';
+import { InfrastructureLayer, type BuildTool } from './InfrastructureEditor';
 
 const BRAZIL_CENTER: LatLng = [-14.5, -52];
 
@@ -27,6 +29,13 @@ interface MapViewProps {
   site: { lat: number; lng: number } | null;
   flyTo: FlyTarget | null;
   onReady?: (map: L.Map) => void;
+  infrastructure: Infrastructure[];
+  onInfrastructureChange: (items: Infrastructure[]) => void;
+  buildTool: BuildTool;
+  buildWidth: number;
+  buildLength: number;
+  roadIndex: number;
+  onBuildMessage: (message: string) => void;
 }
 
 function toCoords(layer: L.Polygon): LatLng[] {
@@ -155,7 +164,7 @@ function FlyTo({ target }: { target: FlyTarget | null }) {
   return null;
 }
 
-export function MapView({ polygon, onPolygonChange, panels, usedCount, site, flyTo, onReady }: MapViewProps) {
+export function MapView({ polygon, onPolygonChange, panels, usedCount, site, flyTo, onReady, infrastructure, onInfrastructureChange, buildTool, buildWidth, buildLength, roadIndex, onBuildMessage }: MapViewProps) {
   return (
     <div className="map-frame">
       <MapContainer center={BRAZIL_CENTER} zoom={4} maxZoom={21} scrollWheelZoom>
@@ -187,6 +196,7 @@ export function MapView({ polygon, onPolygonChange, panels, usedCount, site, fly
         </LayersControl>
         <DrawControl polygon={polygon} onPolygonChange={onPolygonChange} />
         <PanelsLayer panels={panels} usedCount={usedCount} />
+        {polygon && <InfrastructureLayer key={`${buildTool}:${roadIndex}:${JSON.stringify(polygon)}`} area={polygon} items={infrastructure} onChange={onInfrastructureChange} onAreaChange={onPolygonChange} roadIndex={roadIndex} tool={buildTool} width={buildWidth} length={buildLength} onMessage={onBuildMessage} />}
         <FlyTo target={flyTo} />
         <MapReady onReady={onReady} />
         {site && !polygon && (

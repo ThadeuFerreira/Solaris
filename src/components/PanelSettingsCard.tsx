@@ -82,6 +82,16 @@ export function PanelSettingsCard({ settings, onChange, panel, plan, suggestedPa
         </p>
       )}
 
+      <label className="field">
+        <span>Área máxima ocupada por painéis</span>
+        <select value={settings.coveragePct} onChange={(e) => onChange({ coveragePct: Number(e.target.value) })}>
+          {[100, 90, 80, 70, 60, 50, 40, 30, 20, 10].map((pct) => (
+            <option key={pct} value={pct}>{pct}% — reservar pelo menos {100 - pct}%</option>
+          ))}
+        </select>
+      </label>
+      <p className="hint">Limite da área horizontal coberta pelos módulos. Recuos e espaços entre painéis também contam como área livre; o desenho não define caminhos de acesso ou infraestrutura.</p>
+
       <div className="field-grid">
         <Segmented
           label="Montagem"
@@ -203,16 +213,6 @@ export function PanelSettingsCard({ settings, onChange, panel, plan, suggestedPa
 
       <div className="field-grid">
         <NumberField
-          label="Limitar quantidade"
-          unit="painéis"
-          min={0}
-          step={1}
-          nullable
-          placeholder={plan ? `máx. ${plan.fittedCount}` : 'sem limite'}
-          value={settings.maxPanels}
-          onChange={(v) => onChange({ maxPanels: v === null ? null : Math.round(v) })}
-        />
-        <NumberField
           label="Perdas do sistema"
           unit="%"
           min={0}
@@ -226,9 +226,6 @@ export function PanelSettingsCard({ settings, onChange, panel, plan, suggestedPa
           <span>
             Para cobrir seu consumo: <strong>{suggestedPanels} painéis</strong>
           </span>
-          <button type="button" className="btn btn-small" onClick={() => onChange({ maxPanels: suggestedPanels })}>
-            Aplicar
-          </button>
         </div>
       )}
       <p className="hint">Perdas incluem sujeira, cabos, inversor e descasamento; o efeito da temperatura é calculado à parte.</p>

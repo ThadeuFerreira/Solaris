@@ -18,6 +18,7 @@ export interface LayoutInput {
   solar: SolarInput;
   panel: PanelModel;
   settings: PanelSettings;
+  exclusions?: LatLng[][];
 }
 
 export interface LayoutPlan {
@@ -27,7 +28,6 @@ export interface LayoutPlan {
   optimalTiltDeg: number;
   rowGapM: number;
   panels: LatLng[][];
-  layoutTruncated: boolean;
   fittedCount: number;
 }
 
@@ -68,7 +68,7 @@ export function autoAzimuth(polygon: LatLng[], lat: number): number {
   return distance(options[0]) <= distance(options[1]) ? options[0] : options[1];
 }
 
-export function planLayout({ polygon, solar, panel, settings }: LayoutInput): LayoutPlan {
+export function planLayout({ polygon, solar, panel, settings, exclusions }: LayoutInput): LayoutPlan {
   const azimuthDeg = settings.azimuthDeg ?? autoAzimuth(polygon, solar.lat);
   const optimalTiltDeg = optimalTilt(solar.lat, solar.ghi, azimuthDeg);
   const tiltDeg = settings.mounting === 'rack' && settings.autoTilt ? optimalTiltDeg : settings.tiltDeg;
@@ -87,23 +87,26 @@ export function planLayout({ polygon, solar, panel, settings }: LayoutInput): La
     rowGapM,
     setbackM: settings.setbackM,
     bearingDeg: azimuthDeg,
+    exclusions,
   });
+  const areaM2 = polygonAreaM2(polygon);
+  const coverage = Math.max(0, Math.min(100, settings.coveragePct));
+  const coverageLimit = Math.floor((areaM2 * coverage / 100) / (along * footprint) + 1e-9);
+  const panels = layout.panels.slice(0, coverageLimit);
   return {
-    areaM2: polygonAreaM2(polygon),
+    areaM2,
     azimuthDeg,
     tiltDeg,
     optimalTiltDeg,
     rowGapM,
-    panels: layout.panels,
-    layoutTruncated: layout.truncated,
-    fittedCount: layout.panels.length,
+    panels,
+    fittedCount: panels.length,
   };
 }
 
 export function simulate(input: EnergyInput): Simulation {
   const { plan, solar, panel, settings, finance } = input;
-  const usedCount =
-    settings.maxPanels === null ? plan.fittedCount : Math.min(plan.fittedCount, Math.max(0, settings.maxPanels));
+  const usedCount = plan.fittedCount;
   const kWp = (usedCount * panel.powerW) / 1000;
 
   const planeIrradiation = tiltedIrradiation(solar.lat, solar.ghi, { tiltDeg: plan.tiltDeg, azimuthDeg: plan.azimuthDeg });

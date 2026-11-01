@@ -16,8 +16,8 @@ export interface PanelSettings {
   azimuthDeg: number | null;
   setbackM: number;
   gapM: number;
-  /** Optional cap on the number of panels, e.g. sized to consumption. */
-  maxPanels: number | null;
+  /** Maximum share of the drawn horizontal area covered by panel footprints. */
+  coveragePct: number;
   systemLossesPct: number;
 }
 
@@ -54,7 +54,7 @@ export const DEFAULT_PANEL_SETTINGS: PanelSettings = {
   azimuthDeg: null,
   setbackM: 0.3,
   gapM: 0.02,
-  maxPanels: null,
+  coveragePct: 100,
   systemLossesPct: 14,
 };
 

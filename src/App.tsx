@@ -17,7 +17,9 @@ import { guessDistributor, ICMS_BY_UF } from './data/distributors';
 import { CUSTOM_PANEL_ID, makeCustomPanel, PANELS } from './data/panels';
 import { useAsync } from './hooks/useAsync';
 import { fmtNumber } from './lib/format';
-import { centroidOf, localFrame, type LatLng } from './lib/geometry';
+import { centroidOf, footprintsInside, localFrame, type LatLng } from './lib/geometry';
+import { infrastructureFootprints, type Infrastructure } from './lib/infrastructure';
+import type { BuildTool } from './components/InfrastructureEditor';
 import { mergeSettings, validateSavedSimulation, type SavedSimulation } from './lib/savedSimulation';
 import { planLayout, simulate, type SolarInput } from './lib/simulate';
 import { annualFromDailyMeans, estimateGhiFromLatitude, monthlyExtraterrestrial } from './lib/solar';
@@ -59,6 +61,12 @@ export default function App() {
   const [searchSite, setSearchSite] = useState<{ lat: number; lng: number; label: string } | null>(null);
   const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);
   const [panelSettings, setPanelSettings] = useState<PanelSettings>(DEFAULT_PANEL_SETTINGS);
+  const [infrastructure, setInfrastructure] = useState<Infrastructure[]>([]);
+  const [buildTool, setBuildTool] = useState<BuildTool>('none');
+  const [roadIndex, setRoadIndex] = useState(-1);
+  const [buildWidth, setBuildWidth] = useState(3);
+  const [buildLength, setBuildLength] = useState(3);
+  const [buildMessage, setBuildMessage] = useState('Selecione uma ferramenta e clique no mapa.');
   const [tariffSettings, setTariffSettings] = useState<TariffSettings>(DEFAULT_TARIFF_SETTINGS);
   const [financeSettings, setFinanceSettings] = useState<FinanceSettings>(DEFAULT_FINANCE_SETTINGS);
   const [geoError, setGeoError] = useState<string | null>(null);
@@ -151,16 +159,19 @@ export default function App() {
     return PANELS.find((p) => p.id === panelSettings.panelId) ?? PANELS[0];
   }, [panelSettings.panelId, panelSettings.custom]);
 
-  const { mounting, orientation, tiltDeg, autoTilt, azimuthDeg, setbackM, gapM } = panelSettings;
+  const { mounting, orientation, tiltDeg, autoTilt, azimuthDeg, setbackM, gapM, coveragePct } = panelSettings;
+  const activeInfrastructure = useMemo(() => polygon && mounting === 'rack' ? infrastructure.filter((item) => footprintsInside(polygon, infrastructureFootprints(item))) : [], [polygon, mounting, infrastructure]);
+  const exclusions = useMemo(() => activeInfrastructure.flatMap(infrastructureFootprints), [activeInfrastructure]);
   const plan = useMemo(() => {
     if (!polygon || !solar) return null;
     return planLayout({
       polygon,
       solar,
       panel,
-      settings: { ...DEFAULT_PANEL_SETTINGS, mounting, orientation, tiltDeg, autoTilt, azimuthDeg, setbackM, gapM },
+      exclusions,
+      settings: { ...DEFAULT_PANEL_SETTINGS, mounting, orientation, tiltDeg, autoTilt, azimuthDeg, setbackM, gapM, coveragePct },
     });
-  }, [polygon, solar, panel, mounting, orientation, tiltDeg, autoTilt, azimuthDeg, setbackM, gapM]);
+  }, [polygon, solar, panel, mounting, orientation, tiltDeg, autoTilt, azimuthDeg, setbackM, gapM, coveragePct, exclusions]);
 
   const sim = useMemo(() => {
     if (!plan || !solar) return null;
@@ -190,6 +201,7 @@ export default function App() {
         setPanelSettings(mergeSettings(DEFAULT_PANEL_SETTINGS, saved.panel));
         setTariffSettings(mergeSettings(DEFAULT_TARIFF_SETTINGS, saved.tariff));
         setFinanceSettings(mergeSettings(DEFAULT_FINANCE_SETTINGS, saved.finance));
+        setInfrastructure(saved.infrastructure ?? []);
         setShare({ status: 'done', message: 'Simulação compartilhada carregada.', url: shareUrl(sharedId) });
       },
       (err: unknown) => {
@@ -209,6 +221,7 @@ export default function App() {
       panel: { ...panelSettings },
       tariff: { ...tariffSettings },
       finance: { ...financeSettings },
+      infrastructure,
     };
     setShare({ status: 'busy', message: 'Salvando…' });
     try {
@@ -225,7 +238,7 @@ export default function App() {
         message: `Não foi possível salvar (${err instanceof Error ? err.message : err}). Salvar requer o servidor do Solaris (npm run dev ou npm start).`,
       });
     }
-  }, [polygon, searchSite, panelSettings, tariffSettings, financeSettings]);
+  }, [polygon, searchSite, panelSettings, tariffSettings, financeSettings, infrastructure]);
 
   // ---------- Actions ----------
   const selectPlace = useCallback((p: Place) => {
@@ -332,6 +345,20 @@ export default function App() {
                 {share.status === 'done' && <a href={share.url}>{share.url}</a>}
               </p>
             )}
+            {polygon && mounting === 'rack' && (
+              <div className="card" style={{ padding: 10 }}>
+                <strong>Infraestrutura no solo — {buildTool === 'none' ? 'navegação' : 'modo de desenho ativo'}</strong>
+                <div className="map-toolbar" style={{ marginTop: 6 }}>
+                  {([['none', 'Navegar'], ['transformer', 'Transformador'], ['rectifier', 'Retificador'], ['pole', 'Torre / poste'], ['road', 'Estrada reta'], ['curve-area', 'Curvar limite']] as const).map(([value, label]) => (
+                    <button key={value} type="button" className="btn btn-small" aria-pressed={buildTool === value} onClick={() => { setBuildTool(value); setBuildMessage(value === 'road' ? 'Clique no início e no fim da estrada reta.' : value === 'curve-area' ? 'Clique perto do lado a curvar e depois no ponto de controle.' : value === 'none' ? 'Navegação ativa. Arraste o mapa normalmente.' : 'Clique no mapa para posicionar.'); }}>{label}</button>
+                  ))}
+                  <label>Largura (m) <input type="number" min="0.5" max="100" step="0.5" value={buildWidth} onChange={(e) => setBuildWidth(Math.max(0.5, Math.min(100, Number(e.target.value) || 0.5)))} style={{ width: 70 }} /></label>
+                  {['transformer', 'rectifier', 'pole'].includes(buildTool) && <label>Comprimento (m) <input type="number" min="0.5" max="100" step="0.5" value={buildLength} onChange={(e) => setBuildLength(Math.max(0.5, Math.min(100, Number(e.target.value) || 0.5)))} style={{ width: 70 }} /></label>}
+                </div>
+                <p className="hint" role="status">{buildMessage} As dimensões são estimativas editáveis antes da colocação.</p>
+                {infrastructure.length > 0 && <div className="map-toolbar">{infrastructure.map((item, i) => <span key={i}>{item.type === 'road' && activeInfrastructure.includes(item) && <button type="button" className="btn btn-small" aria-pressed={buildTool === 'curve-road' && roadIndex === activeInfrastructure.indexOf(item)} onClick={() => { setRoadIndex(activeInfrastructure.indexOf(item)); setBuildTool('curve-road'); setBuildMessage('Clique no ponto de controle para curvar a estrada selecionada.'); }}>Curvar estrada {i + 1}</button>} <button type="button" className="btn btn-small" onClick={() => { setBuildTool('none'); setInfrastructure((old) => old.filter((_, index) => index !== i)); }}>Remover {item.type === 'road' ? 'estrada' : item.type === 'transformer' ? 'transformador' : item.type === 'pole' ? 'poste' : 'retificador'} {i + 1}{!activeInfrastructure.includes(item) ? ' (fora da área)' : ''} ×</button></span>)}</div>}
+              </div>
+            )}
             <MapView
               polygon={polygon}
               onPolygonChange={setPolygon}
@@ -340,10 +367,14 @@ export default function App() {
               site={site}
               flyTo={flyTo}
               onReady={onMapReady}
+              infrastructure={activeInfrastructure}
+              onInfrastructureChange={(items) => setInfrastructure([...infrastructure.filter((item) => !activeInfrastructure.includes(item)), ...items])}
+              buildTool={mounting === 'rack' ? buildTool : 'none'}
+              buildWidth={buildWidth}
+              buildLength={buildLength}
+              roadIndex={roadIndex}
+              onBuildMessage={setBuildMessage}
             />
-            {plan?.layoutTruncated && (
-              <p className="notice notice-warning">Área muito grande: exibindo os primeiros 5.000 painéis.</p>
-            )}
           </div>
 
           <aside className="sidebar" aria-label="Configurações">

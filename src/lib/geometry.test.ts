@@ -64,10 +64,9 @@ describe('panel layout', () => {
     }
   });
 
-  it('caps very large layouts', () => {
+  it('places more than 5,000 panels in a large area', () => {
     const field = rectangle([-15.79, -47.88], 200, 200);
-    const { panels, truncated } = layoutPanels(field, { ...BASE, alongRowM: 1, acrossRowM: 2, maxPanels: 100 });
-    expect(panels).toHaveLength(100);
-    expect(truncated).toBe(true);
+    const { panels } = layoutPanels(field, { ...BASE, alongRowM: 1, acrossRowM: 2 });
+    expect(panels.length).toBeGreaterThan(5000);
   });
 });
