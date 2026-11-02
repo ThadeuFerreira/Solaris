@@ -13,6 +13,7 @@ import { PanelSettingsCard } from './components/PanelSettingsCard';
 import { DetailTiles, QuickSummary, SunFacts } from './components/Results';
 import { SearchBar } from './components/SearchBar';
 import { TariffSettingsCard, type Pricing } from './components/TariffSettingsCard';
+import { TopBar, type DetailView } from './components/TopBar';
 import { guessDistributor, ICMS_BY_UF } from './data/distributors';
 import { CUSTOM_PANEL_ID, makeCustomPanel, PANELS } from './data/panels';
 import { useAsync } from './hooks/useAsync';
@@ -69,6 +70,7 @@ export default function App() {
   const [buildMessage, setBuildMessage] = useState('Selecione uma ferramenta e clique no mapa.');
   const [tariffSettings, setTariffSettings] = useState<TariffSettings>(DEFAULT_TARIFF_SETTINGS);
   const [financeSettings, setFinanceSettings] = useState<FinanceSettings>(DEFAULT_FINANCE_SETTINGS);
+  const [detailView, setDetailView] = useState<DetailView>('none');
   const [geoError, setGeoError] = useState<string | null>(null);
   const [sharedId] = useState(() => new URLSearchParams(window.location.search).get('sim'));
   const [share, setShare] = useState<ShareState>(() =>
@@ -309,8 +311,17 @@ export default function App() {
         </div>
       </header>
 
+      <TopBar
+        sim={sim}
+        plan={plan}
+        financeSettings={financeSettings}
+        onUpdateFinance={updateFinance}
+        detailView={detailView}
+        onSelectDetailView={setDetailView}
+      />
+
       <main>
-        <div className="workspace">
+        <div className={`workspace ${detailView === 'none' || detailView === 'charts' || detailView === 'methodology' ? 'workspace-simplified' : ''}`}>
           <div className="map-column">
             <SearchBar onSelect={selectPlace} />
             <div className="map-toolbar">
@@ -377,88 +388,238 @@ export default function App() {
             />
           </div>
 
-          <aside className="sidebar" aria-label="Configurações">
-            {sim ? (
-              <QuickSummary sim={sim} consumptionKnown={financeSettings.monthlyConsumptionKWh > 0} />
-            ) : (
-              <div className="card empty-state">
-                <h2>Comece pelo mapa</h2>
-                <p className="hint">
-                  1. Busque seu endereço e aproxime até ver o telhado. 2. Desenhe a área disponível com as ferramentas à
-                  esquerda do mapa. 3. Ajuste painéis, tarifa e consumo aqui.
-                </p>
+          {(detailView === 'panels' ||
+            detailView === 'tariffs' ||
+            detailView === 'finance' ||
+            detailView === 'metrics' ||
+            detailView === 'all') && (
+            <aside className="sidebar" aria-label="Configurações e Detalhes">
+              <div className="sidebar-nav">
+                <div className="sidebar-nav-tabs">
+                  <button
+                    type="button"
+                    className={`sidebar-tab ${detailView === 'panels' ? 'active' : ''}`}
+                    onClick={() => setDetailView('panels')}
+                  >
+                    Painéis
+                  </button>
+                  <button
+                    type="button"
+                    className={`sidebar-tab ${detailView === 'tariffs' ? 'active' : ''}`}
+                    onClick={() => setDetailView('tariffs')}
+                  >
+                    Tarifa
+                  </button>
+                  <button
+                    type="button"
+                    className={`sidebar-tab ${detailView === 'finance' ? 'active' : ''}`}
+                    onClick={() => setDetailView('finance')}
+                  >
+                    Finanças
+                  </button>
+                  <button
+                    type="button"
+                    className={`sidebar-tab ${detailView === 'metrics' ? 'active' : ''}`}
+                    onClick={() => setDetailView('metrics')}
+                  >
+                    Métricas
+                  </button>
+                  <button
+                    type="button"
+                    className={`sidebar-tab ${detailView === 'all' ? 'active' : ''}`}
+                    onClick={() => setDetailView('all')}
+                  >
+                    Tudo
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-small btn-close-sidebar"
+                  onClick={() => setDetailView('none')}
+                  title="Fechar configurações e voltar à visão simplificada"
+                >
+                  ✕ Fechar
+                </button>
               </div>
-            )}
 
-            {site && (
-              <Section title="Sol no local" note={annualGhi ? `${fmtNumber(annualGhi)} kWh/m²·ano` : undefined}>
-                <SunFacts lat={site.lat} plan={plan} />
-                <p className="source">
-                  Irradiação: {solarSource}
-                  {solarState.status === 'error' && (
-                    <>
-                      {' '}
-                      ·{' '}
-                      <button type="button" className="btn btn-small" onClick={solarState.retry}>
-                        Tentar NASA de novo
-                      </button>
-                    </>
+              {detailView === 'panels' && (
+                <PanelSettingsCard
+                  settings={panelSettings}
+                  onChange={updatePanel}
+                  panel={panel}
+                  plan={plan}
+                  suggestedPanels={sim?.suggestedPanels ?? null}
+                />
+              )}
+
+              {detailView === 'tariffs' && (
+                <TariffSettingsCard
+                  settings={{ ...tariffSettings, distributor }}
+                  onChange={updateTariff}
+                  tariffs={tariffsState}
+                  flag={flagState}
+                  pricing={pricing}
+                  placeLabel={place?.uf ?? null}
+                />
+              )}
+
+              {detailView === 'finance' && (
+                <FinanceSettingsCard
+                  settings={financeSettings}
+                  onChange={updateFinance}
+                  trend={pricing.trend}
+                  effectiveIncrease={tariffIncrease}
+                />
+              )}
+
+              {detailView === 'metrics' && (
+                <>
+                  {sim ? (
+                    <QuickSummary sim={sim} consumptionKnown={financeSettings.monthlyConsumptionKWh > 0} />
+                  ) : (
+                    <div className="card empty-state">
+                      <h2>Comece pelo mapa</h2>
+                      <p className="hint">Desenhe seu telhado no mapa para ver o resumo e métricas detalhadas.</p>
+                    </div>
                   )}
-                </p>
-              </Section>
-            )}
+                  {plan && sim && <DetailTiles plan={plan} sim={sim} />}
+                  {site && (
+                    <Section title="Sol no local" note={annualGhi ? `${fmtNumber(annualGhi)} kWh/m²·ano` : undefined}>
+                      <SunFacts lat={site.lat} plan={plan} />
+                      <p className="source">
+                        Irradiação: {solarSource}
+                        {solarState.status === 'error' && (
+                          <>
+                            {' '}
+                            ·{' '}
+                            <button type="button" className="btn btn-small" onClick={solarState.retry}>
+                              Tentar NASA de novo
+                            </button>
+                          </>
+                        )}
+                      </p>
+                    </Section>
+                  )}
+                </>
+              )}
 
-            <PanelSettingsCard
-              settings={panelSettings}
-              onChange={updatePanel}
-              panel={panel}
-              plan={plan}
-              suggestedPanels={sim?.suggestedPanels ?? null}
-            />
-            <TariffSettingsCard
-              settings={{ ...tariffSettings, distributor }}
-              onChange={updateTariff}
-              tariffs={tariffsState}
-              flag={flagState}
-              pricing={pricing}
-              placeLabel={place?.uf ?? null}
-            />
-            <FinanceSettingsCard
-              settings={financeSettings}
-              onChange={updateFinance}
-              trend={pricing.trend}
-              effectiveIncrease={tariffIncrease}
-            />
-          </aside>
+              {detailView === 'all' && (
+                <>
+                  {sim ? (
+                    <QuickSummary sim={sim} consumptionKnown={financeSettings.monthlyConsumptionKWh > 0} />
+                  ) : (
+                    <div className="card empty-state">
+                      <h2>Comece pelo mapa</h2>
+                      <p className="hint">
+                        1. Busque seu endereço e aproxime até ver o telhado. 2. Desenhe a área disponível com as ferramentas à
+                        esquerda do mapa. 3. Ajuste painéis, tarifa e consumo aqui.
+                      </p>
+                    </div>
+                  )}
+
+                  {site && (
+                    <Section title="Sol no local" note={annualGhi ? `${fmtNumber(annualGhi)} kWh/m²·ano` : undefined}>
+                      <SunFacts lat={site.lat} plan={plan} />
+                      <p className="source">
+                        Irradiação: {solarSource}
+                        {solarState.status === 'error' && (
+                          <>
+                            {' '}
+                            ·{' '}
+                            <button type="button" className="btn btn-small" onClick={solarState.retry}>
+                              Tentar NASA de novo
+                            </button>
+                          </>
+                        )}
+                      </p>
+                    </Section>
+                  )}
+
+                  <PanelSettingsCard
+                    settings={panelSettings}
+                    onChange={updatePanel}
+                    panel={panel}
+                    plan={plan}
+                    suggestedPanels={sim?.suggestedPanels ?? null}
+                  />
+                  <TariffSettingsCard
+                    settings={{ ...tariffSettings, distributor }}
+                    onChange={updateTariff}
+                    tariffs={tariffsState}
+                    flag={flagState}
+                    pricing={pricing}
+                    placeLabel={place?.uf ?? null}
+                  />
+                  <FinanceSettingsCard
+                    settings={financeSettings}
+                    onChange={updateFinance}
+                    trend={pricing.trend}
+                    effectiveIncrease={tariffIncrease}
+                  />
+                </>
+              )}
+            </aside>
+          )}
         </div>
 
-        <section className="results" aria-label="Resultados">
-          {plan && sim && solar && (
-            <>
-              <DetailTiles plan={plan} sim={sim} />
-              <div className="chart-grid">
-                <MonthlyProductionChart monthlyKWh={sim.monthlyKWh} consumption={financeSettings.monthlyConsumptionKWh} />
-                <IrradianceChart
-                  h0={monthlyExtraterrestrial(solar.lat)}
-                  clearSky={nasa?.clearSky ?? null}
-                  ghi={solar.ghi}
-                  plane={sim.planeIrradiation}
-                  ghiSource={solarSource}
-                />
-                <LifetimeProductionChart years={sim.finance.years} />
-                <CashFlowChart
-                  years={sim.finance.years}
-                  investment={sim.investment}
-                  payback={sim.finance.paybackYears}
-                />
+        {(detailView === 'charts' || detailView === 'all') && (
+          <section className="results" aria-label="Gráficos e Resultados">
+            <div className="results-nav-header">
+              <div>
+                <h2>Gráficos de Produção e Retorno</h2>
+                <p className="hint">Geração estimada mês a mês, irradiação e fluxo de caixa ao longo dos anos.</p>
               </div>
-            </>
-          )}
-          {pricing.tariff && pricing.tariff.history.length > 1 && (
-            <TariffHistoryChart history={pricing.tariff.history} distributor={pricing.tariff.distributor} />
-          )}
-          <Methodology />
-        </section>
+              {detailView === 'charts' && (
+                <button type="button" className="btn btn-small" onClick={() => setDetailView('none')}>
+                  ✕ Fechar gráficos
+                </button>
+              )}
+            </div>
+            {plan && sim && solar ? (
+              <>
+                {detailView === 'all' && <DetailTiles plan={plan} sim={sim} />}
+                <div className="chart-grid">
+                  <MonthlyProductionChart monthlyKWh={sim.monthlyKWh} consumption={financeSettings.monthlyConsumptionKWh} />
+                  <IrradianceChart
+                    h0={monthlyExtraterrestrial(solar.lat)}
+                    clearSky={nasa?.clearSky ?? null}
+                    ghi={solar.ghi}
+                    plane={sim.planeIrradiation}
+                    ghiSource={solarSource}
+                  />
+                  <LifetimeProductionChart years={sim.finance.years} />
+                  <CashFlowChart
+                    years={sim.finance.years}
+                    investment={sim.investment}
+                    payback={sim.finance.paybackYears}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="card empty-state">
+                <h3>Aguardando desenho da área</h3>
+                <p className="hint">Defina a área do telhado no mapa para gerar os gráficos.</p>
+              </div>
+            )}
+            {pricing.tariff && pricing.tariff.history.length > 1 && (
+              <TariffHistoryChart history={pricing.tariff.history} distributor={pricing.tariff.distributor} />
+            )}
+          </section>
+        )}
+
+        {(detailView === 'methodology' || detailView === 'all') && (
+          <section className="results" aria-label="Metodologia">
+            {detailView === 'methodology' && (
+              <div className="results-nav-header">
+                <h2>Metodologia de Cálculo</h2>
+                <button type="button" className="btn btn-small" onClick={() => setDetailView('none')}>
+                  ✕ Fechar
+                </button>
+              </div>
+            )}
+            <Methodology />
+          </section>
+        )}
       </main>
     </>
   );
