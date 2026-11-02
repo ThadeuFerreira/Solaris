@@ -1,0 +1,420 @@
+{
+  "sourceUrl": "https://dadosabertos.aneel.gov.br/dataset/tarifas-distribuidoras-energia-eletrica/resource/fcf2906c-7c32-4b9b-a637-054e7a5234f4",
+  "license": "ODbL-1.0",
+  "sourceDate": "2026-10-31",
+  "asOf": "2026-11-02",
+  "distributors": [
+    {
+      "distributor": "Âmbar Amazonas",
+      "cnpj": "02341467000120"
+    },
+    {
+      "distributor": "Âmbar Roraima",
+      "cnpj": "02341470000144"
+    },
+    {
+      "distributor": "CASTRO-DIS",
+      "cnpj": "30460297000139"
+    },
+    {
+      "distributor": "CEA",
+      "cnpj": "05965546000109"
+    },
+    {
+      "distributor": "CEDRAP",
+      "cnpj": "60196987000193"
+    },
+    {
+      "distributor": "CEDRI",
+      "cnpj": "50105865000190"
+    },
+    {
+      "distributor": "CEEE-D",
+      "cnpj": "08467115000100"
+    },
+    {
+      "distributor": "CEGERO",
+      "cnpj": "86444163000189"
+    },
+    {
+      "distributor": "CEJAMA",
+      "cnpj": "85665990000130"
+    },
+    {
+      "distributor": "CELESC",
+      "cnpj": "08336783000190"
+    },
+    {
+      "distributor": "CELETRO",
+      "cnpj": "87776043000141"
+    },
+    {
+      "distributor": "CEMIG-D",
+      "cnpj": "06981180000116"
+    },
+    {
+      "distributor": "CEMIRIM",
+      "cnpj": "52777034000190"
+    },
+    {
+      "distributor": "CEPRAG",
+      "cnpj": "78274610000170"
+    },
+    {
+      "distributor": "Ceraçá",
+      "cnpj": "09364804000144"
+    },
+    {
+      "distributor": "CERAL ANITÁPOLIS",
+      "cnpj": "75826404000138"
+    },
+    {
+      "distributor": "CERAL ARARUAMA",
+      "cnpj": "28610236000169"
+    },
+    {
+      "distributor": "CERAL-DIS",
+      "cnpj": "10532365000110"
+    },
+    {
+      "distributor": "CERBRANORTE",
+      "cnpj": "86433042000131"
+    },
+    {
+      "distributor": "CERCI",
+      "cnpj": "27707397000102"
+    },
+    {
+      "distributor": "CERCOS",
+      "cnpj": "13107842000199"
+    },
+    {
+      "distributor": "CEREJ",
+      "cnpj": "82574864000181"
+    },
+    {
+      "distributor": "CERES",
+      "cnpj": "31465487000101"
+    },
+    {
+      "distributor": "CERFOX",
+      "cnpj": "97505838000179"
+    },
+    {
+      "distributor": "CERGAL",
+      "cnpj": "86439510000185"
+    },
+    {
+      "distributor": "CERGAPA",
+      "cnpj": "01229747000189"
+    },
+    {
+      "distributor": "CERGRAL",
+      "cnpj": "86449170000173"
+    },
+    {
+      "distributor": "CERILUZ",
+      "cnpj": "87656989000174"
+    },
+    {
+      "distributor": "CERIM",
+      "cnpj": "50235449000107"
+    },
+    {
+      "distributor": "CERIPa",
+      "cnpj": "49606312000132"
+    },
+    {
+      "distributor": "CERIS",
+      "cnpj": "57384943000182"
+    },
+    {
+      "distributor": "CERMC",
+      "cnpj": "52548732000114"
+    },
+    {
+      "distributor": "CERMISSÕES",
+      "cnpj": "97081434000103"
+    },
+    {
+      "distributor": "CERMOFUL",
+      "cnpj": "86533346000170"
+    },
+    {
+      "distributor": "CERNHE",
+      "cnpj": "53176038000186"
+    },
+    {
+      "distributor": "CERPALO",
+      "cnpj": "85318640000105"
+    },
+    {
+      "distributor": "CERPRO",
+      "cnpj": "44560381000139"
+    },
+    {
+      "distributor": "CERRP",
+      "cnpj": "46598678000119"
+    },
+    {
+      "distributor": "CERSAD DISTRIBUI",
+      "cnpj": "11615872000180"
+    },
+    {
+      "distributor": "CERSUL",
+      "cnpj": "86512670000102"
+    },
+    {
+      "distributor": "CERTAJA",
+      "cnpj": "97839922000129"
+    },
+    {
+      "distributor": "CERTEL ENERGIA",
+      "cnpj": "09257558000121"
+    },
+    {
+      "distributor": "CERTHIL",
+      "cnpj": "98042963000152"
+    },
+    {
+      "distributor": "CERTREL",
+      "cnpj": "76583962000182"
+    },
+    {
+      "distributor": "CERVAM",
+      "cnpj": "55188502000180"
+    },
+    {
+      "distributor": "CETRIL",
+      "cnpj": "49313653000110"
+    },
+    {
+      "distributor": "CHESP",
+      "cnpj": "01377555000110"
+    },
+    {
+      "distributor": "COCEL",
+      "cnpj": "75805895000130"
+    },
+    {
+      "distributor": "CODESAM",
+      "cnpj": "11810343000138"
+    },
+    {
+      "distributor": "COELBA",
+      "cnpj": "15139629000194"
+    },
+    {
+      "distributor": "COOPERA",
+      "cnpj": "83646653000170"
+    },
+    {
+      "distributor": "COOPERALIANÇA",
+      "cnpj": "83647990000181"
+    },
+    {
+      "distributor": "COOPERCOCAL",
+      "cnpj": "86532348000145"
+    },
+    {
+      "distributor": "COOPERLUZ",
+      "cnpj": "95824322000161"
+    },
+    {
+      "distributor": "COOPERMILA",
+      "cnpj": "75568154000183"
+    },
+    {
+      "distributor": "COOPERNORTE",
+      "cnpj": "88022918000182"
+    },
+    {
+      "distributor": "COOPERSUL",
+      "cnpj": "87462750000163"
+    },
+    {
+      "distributor": "COOPERZEM",
+      "cnpj": "78829843000192"
+    },
+    {
+      "distributor": "COORSEL",
+      "cnpj": "86448057000173"
+    },
+    {
+      "distributor": "COPEL-DIS",
+      "cnpj": "04368898000106"
+    },
+    {
+      "distributor": "COPREL",
+      "cnpj": "90660754000160"
+    },
+    {
+      "distributor": "COSERN",
+      "cnpj": "08324196000181"
+    },
+    {
+      "distributor": "CPFL Santa Cruz",
+      "cnpj": "53859112000169"
+    },
+    {
+      "distributor": "CPFL-PAULISTA",
+      "cnpj": "33050196000188"
+    },
+    {
+      "distributor": "CPFL-PIRATINING",
+      "cnpj": "04172213000151"
+    },
+    {
+      "distributor": "CRELUZ-D",
+      "cnpj": "91950261000128"
+    },
+    {
+      "distributor": "DCELT",
+      "cnpj": "83855973000130"
+    },
+    {
+      "distributor": "DEMEI",
+      "cnpj": "95289500000100"
+    },
+    {
+      "distributor": "DMED",
+      "cnpj": "23664303000104"
+    },
+    {
+      "distributor": "EAC",
+      "cnpj": "04065033000170"
+    },
+    {
+      "distributor": "EDP ES",
+      "cnpj": "28152650000171"
+    },
+    {
+      "distributor": "EDP SP",
+      "cnpj": "02302100000106"
+    },
+    {
+      "distributor": "EFLJC",
+      "cnpj": "86301124000122"
+    },
+    {
+      "distributor": "EFLUL",
+      "cnpj": "86531175000140"
+    },
+    {
+      "distributor": "ELEKTRO",
+      "cnpj": "02328280000197"
+    },
+    {
+      "distributor": "ELETROCAR",
+      "cnpj": "88446034000155"
+    },
+    {
+      "distributor": "ELETROPAULO",
+      "cnpj": "61695227000193"
+    },
+    {
+      "distributor": "ELFSM",
+      "cnpj": "27485069000109"
+    },
+    {
+      "distributor": "EMR",
+      "cnpj": "19527639000158"
+    },
+    {
+      "distributor": "EMS",
+      "cnpj": "15413826000150"
+    },
+    {
+      "distributor": "EMT",
+      "cnpj": "03467321000199"
+    },
+    {
+      "distributor": "ENEL CE",
+      "cnpj": "07047251000170"
+    },
+    {
+      "distributor": "ENEL RJ",
+      "cnpj": "33050071000158"
+    },
+    {
+      "distributor": "EPB",
+      "cnpj": "09095183000140"
+    },
+    {
+      "distributor": "EQUATORIAL AL",
+      "cnpj": "12272084000100"
+    },
+    {
+      "distributor": "EQUATORIAL GO",
+      "cnpj": "01543032000104"
+    },
+    {
+      "distributor": "EQUATORIAL MA",
+      "cnpj": "06272793000184"
+    },
+    {
+      "distributor": "EQUATORIAL PA",
+      "cnpj": "04895728000180"
+    },
+    {
+      "distributor": "EQUATORIAL PI",
+      "cnpj": "06840748000189"
+    },
+    {
+      "distributor": "ERO",
+      "cnpj": "05914650000166"
+    },
+    {
+      "distributor": "ESE",
+      "cnpj": "13017462000163"
+    },
+    {
+      "distributor": "ESS",
+      "cnpj": "07282377000120"
+    },
+    {
+      "distributor": "ETO",
+      "cnpj": "25086034000171"
+    },
+    {
+      "distributor": "HIDROPAN",
+      "cnpj": "91982348000187"
+    },
+    {
+      "distributor": "LIGHT SESA",
+      "cnpj": "60444437000146"
+    },
+    {
+      "distributor": "MUXENERGIA",
+      "cnpj": "97578090000134"
+    },
+    {
+      "distributor": "Não Informado",
+      "cnpj": "89435598000155"
+    },
+    {
+      "distributor": "Neoenergia Brasília",
+      "cnpj": "07522669000192"
+    },
+    {
+      "distributor": "Neoenergia PE",
+      "cnpj": "10835932000108"
+    },
+    {
+      "distributor": "PACTO ENERGIA PR",
+      "cnpj": "79850574000109"
+    },
+    {
+      "distributor": "RGE",
+      "cnpj": "02016440000162"
+    },
+    {
+      "distributor": "SULGIPE",
+      "cnpj": "13255658000196"
+    },
+    {
+      "distributor": "UHENPAL",
+      "cnpj": "89889604000144"
+    }
+  ]
+}
