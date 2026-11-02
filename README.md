@@ -24,6 +24,7 @@ settings can be shared by link.
 | Solar irradiance & temperature | [NASA POWER](https://power.larc.nasa.gov/) climatology API | Monthly GHI, clear-sky GHI and air temperature, 2001–2020, no key |
 | Electricity tariffs | [ANEEL Dados Abertos](https://dadosabertos.aneel.gov.br/dataset/tarifas-distribuidoras-energia-eletrica) (CKAN datastore, resource `fcf2906c-7c32-4b9b-a637-054e7a5234f4`) | Residential B1 conventional *Tarifa de Aplicação* (TUSD + TE) for every distributor, with history |
 | Tariff flags | [ANEEL — Bandeiras tarifárias](https://dadosabertos.aneel.gov.br/dataset/bandeiras-tarifarias) (resource `0591b8f6-fe54-437b-b72b-1aa2efd46e42`) | Current flag and surcharge |
+| National annual reference | [ANEEL/SAMP](https://dadosabertos.aneel.gov.br/dataset/samp) | Residential captive-market billed receipts / billed energy; latest complete year that passes validation |
 | Modules | WEG datasheets ([WPV 550/555 HMM0](https://static.weg.net/medias/downloadcenter/h13/he1/WEG-wpv-550-555-hmm0-datasheet-pt.pdf)) | WEG has no public product API, so specs are in `src/data/panels.ts` |
 
 PVGIS (EU JRC) was considered, but its API does not allow browser (AJAX) calls.
@@ -41,8 +42,8 @@ Run `npm run update:distributors` to refresh `src/data/distributor-catalog.json`
 from the official API, with pagination, validity filtering and CNPJ deduplication.
 Attribution: ANEEL Dados Abertos, ODbL 1.0; the snapshot records its source URL,
 source date and catalogue reference date. A catalogue entry does not supply a
-price: missing or expired tariffs still require a bill price and the UI labels
-the example value explicitly.
+price: missing or expired tariffs use the latest validated national annual
+reference, with an explicit source/year label. A bill price overrides it.
 
 Run `npm run collect:history` to backfill all residential B1 conventional tariffs
 and tariff flags into SQLite (`SOLARIS_DB`, default `data/solaris.db`). Each
@@ -63,8 +64,39 @@ command to refresh; no background scheduler is installed by this command.
 
 [`docs/energy-data-plan.sql`](docs/energy-data-plan.sql) describes the broader
 multi-profile design and fallback policy; it is not an executable migration.
-The `annual_tariff_averages` table is ready, but annual averages from SAMP still
-need a validated consumption/receipt importer before use in savings estimates.
+Run `npm run collect:samp` to collect all complete SAMP years since 2003, or
+`npm run collect:samp -- 2024 2023` for specific years. Use `--replay` to reuse
+previously archived source files where available and fetch the missing years.
+The collector discovers yearly resource IDs from ANEEL, queries the residential
+captive market, and saves both pre-tax and with-tax averages. It includes all
+modalities, subclasses and signed rebilling adjustments.
+
+The average is total `Receita Energia + Receita Demanda + Receita Ultrapassagem
+Demanda` divided by total `Energia TE (kWh)`. **Receita Energia already includes
+tariff flags**: the separately reported `Receita Bandeiras` is collected to check
+coverage but is never added again. The with-tax price adds the separately
+reported ICMS, PIS/PASEP and COFINS. Energia TUSD and GD compensation metrics are
+not additional consumption/receipt totals. Decimal amounts are accumulated as
+scaled BigInts, then the result is rounded to millionths of R$/kWh. The SAMP
+definitions are documented in [ANEEL's tariff reports](https://www.gov.br/aneel/pt-br/centrais-de-conteudos/relatorios-e-indicadores/tarifas-e-informacoes-economico-financeiras).
+
+Before release, a year must have all 12 months of energy, receipts and applicable
+tax/flag categories. Conservative distributor-month checks quarantine the whole
+year if pre-tax receipts exceed R$3/kWh or taxes exceed receipts. Observations
+are neither trimmed nor corrected. Rejected years retain their source files and
+failure log, and are excluded from the pricing endpoint. These are Solaris data
+quality checks, not an ANEEL certification. For example, the October 2026 source
+of 2025 contains implausible monthly CEMIG receipts, so the app uses the latest
+earlier validated year. Pre-2006 data only requires tax categories reported in
+the historical source (PIS/COFINS were not separately reported throughout those
+years).
+
+The collector exports validated averages to `src/data/samp-annual-averages.json`
+with ANEEL/SAMP attribution and ODbL 1.0. This reference is included in the app
+for static deployments, an unavailable server or an empty local database. The
+server serves collected averages without waiting for the upstream tariff API.
+Neither user tax settings nor the current flag is applied on top of the national
+with-tax average. The UI explains its year, data source and historical nature.
 
 The server (`server/`) uses Node's built-in `node:sqlite`, so there's no
 native module to compile. It exposes:
@@ -73,6 +105,7 @@ native module to compile. It exposes:
 |---|---|
 | `GET /api/tariffs` | ANEEL residential B1 tariffs with history. Downloaded once a day and upserted in the `tariffs` table, retaining older periods. If ANEEL is down, it serves the last copy marked `stale`. |
 | `GET /api/flag` | Current tariff flag (`tariff_flags` table), refreshed daily |
+| `GET /api/annual-tariffs` | Validated national residential SAMP averages, read from local SQLite without an upstream request |
 | `GET /api/solar?lat=&lng=` | NASA POWER climatology, cached per 0.1° cell (`solar_climatology` table). The climatology doesn't change, so the cache never expires. |
 | `POST /api/simulations` | Saves the drawn area and all settings and returns an id. The UI turns it into a `?sim=<id>` link. |
 | `GET /api/simulations/:id` | Loads a saved simulation |
@@ -108,6 +141,9 @@ harmless.
 - **Price**: (TUSD + TE + flag surcharge) ÷ (1 − ICMS − PIS/COFINS). ICMS
   defaults to each state's standard (modal) rate in `src/data/distributors.ts`.
   These are reference values; check them against a real bill.
+- **Price fallback**: bill price entered by the user → selected distributor's
+  valid tariff → latest complete, validated national SAMP with-tax average →
+  explicitly labelled example only if none of those is available.
 - **Savings**: with Lei 14.300/2022, injected energy progressively pays the
   Fio B (60% in 2026 → 100% from 2029; Fio B share and simultaneous
   self-consumption are editable). When a monthly consumption is entered,

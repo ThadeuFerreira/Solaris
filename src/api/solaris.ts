@@ -6,6 +6,8 @@ import type { SavedSimulation } from '../lib/savedSimulation';
 import { fetchCurrentFlag, fetchResidentialTariffs, type DistributorTariff, type FlagStatus } from './aneel';
 import { fetchJson, HttpError, isAbort } from './http';
 import { fetchSolarClimatology, type SolarClimatology } from './nasaPower';
+import type { AnnualTariffAverage } from './samp';
+import nationalSnapshot from '../data/samp-annual-averages.json';
 
 export interface Provenance {
   /** 'server': Solaris cache; 'direct': the public API, called from the browser. */
@@ -22,6 +24,19 @@ export interface TariffData extends Provenance {
 
 export interface FlagData extends Provenance {
   flag: FlagStatus | null;
+}
+
+export interface AnnualTariffData {
+  averages: AnnualTariffAverage[];
+}
+
+export const BUNDLED_ANNUAL_TARIFFS: AnnualTariffData = nationalSnapshot as AnnualTariffData;
+
+export function loadAnnualTariffs(signal?: AbortSignal): Promise<AnnualTariffData> {
+  return withFallback(async () => {
+    const result = await fetchJson<AnnualTariffData>('/api/annual-tariffs', { signal });
+    return { averages: [...result.averages, ...BUNDLED_ANNUAL_TARIFFS.averages] };
+  }, async () => BUNDLED_ANNUAL_TARIFFS, signal);
 }
 
 export type SolarData = SolarClimatology & Provenance;

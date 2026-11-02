@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FlagStatus, TariffPoint } from '../src/api/aneel';
 import type { SolarClimatology } from '../src/api/nasaPower';
+import type { AnnualTariffAverage } from '../src/api/samp';
 import { mergeSettings } from '../src/lib/savedSimulation';
 import { createApiHandler, type ApiOptions } from './api';
 import { openDatabase, Store } from './db';
@@ -71,6 +72,23 @@ async function startApi(options: Partial<ApiOptions> = {}) {
 }
 
 const HOUR = 3600 * 1000;
+
+describe('national annual tariffs', () => {
+  it('serves the local annual reference even when the upstream distributor API is unavailable', async () => {
+    const api = await startApi({ fetchTariffs: async () => { throw new Error('timeout'); } });
+    const national: AnnualTariffAverage = {
+      referenceYear: 2024, price: 0.95, taxBasis: 'with_taxes', includesFlags: true,
+      completeYear: true, dataThrough: '2024-12', methodology: 'test',
+      sourceUrl: 'https://dadosabertos.aneel.gov.br/dataset/samp', sourceResourceId: 'resource',
+      sourceDate: '2026-10-15', fetchedAt: '2026-11-02T12:00:00Z',
+    };
+    api.store.saveAnnualTariffAverages([national]);
+    expect((await api.get('/api/tariffs')).status).toBe(502);
+    const response = await api.get('/api/annual-tariffs');
+    expect(response.status).toBe(200);
+    expect(response.body.averages).toEqual([national]);
+  });
+});
 
 describe('tariffs', () => {
   it('downloads once and serves from SQLite until the day is over', async () => {

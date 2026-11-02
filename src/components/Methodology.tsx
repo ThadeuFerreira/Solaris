@@ -1,4 +1,5 @@
 import { FLAG_DATASET_URL, TARIFF_DATASET_URL } from '../api/aneel';
+import { SAMP_DATASET_URL } from '../api/samp';
 
 export function Methodology() {
   return (
@@ -54,6 +55,12 @@ export function Methodology() {
             bandeira tarifária vigente
           </a>{' '}
           e de tributos “por dentro”: preço = tarifa ÷ (1 − ICMS − PIS/COFINS).
+        </li>
+        <li>
+          Quando a tarifa da distribuidora não está disponível, usamos a média nacional residencial do último ano completo
+          {' '}validado do <a href={SAMP_DATASET_URL} target="_blank" rel="noreferrer">ANEEL/SAMP</a>:
+          {' '}receita faturada dividida pelo consumo faturado. Essa referência já inclui os impostos e as bandeiras do ano,
+          {' '}sem acrescentá-los novamente. O valor informado da conta de luz sempre tem prioridade.
         </li>
         <li>O reajuste anual padrão é a variação média da tarifa da distribuidora nos últimos 8 anos.</li>
         <li>

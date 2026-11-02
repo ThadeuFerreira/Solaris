@@ -24,4 +24,13 @@ describe('complete ANEEL snapshots', () => {
       .mockResolvedValueOnce(response(last, failure === 'changed_total' ? 3 : 2)));
     await expect(fetchCkanRecords('resource')).rejects.toThrow('ANEEL:');
   });
+
+  it('passes multi-value metric filters and keeps audit fields when reducing the payload', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response([record(1)], 1));
+    vi.stubGlobal('fetch', fetcher);
+    await fetchCkanRecords('resource', { metric: ['energy', 'revenue'] }, undefined, 20000, ['VlrMercado']);
+    const params = new URL(fetcher.mock.calls[0][0]).searchParams;
+    expect(JSON.parse(params.get('filters')!)).toEqual({ metric: ['energy', 'revenue'] });
+    expect(params.get('fields')).toBe('_id,DatGeracaoConjuntoDados,VlrMercado');
+  });
 });

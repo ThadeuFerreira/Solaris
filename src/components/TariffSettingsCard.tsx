@@ -1,4 +1,4 @@
-import { FLAG_DATASET_URL, TARIFF_DATASET_URL, type DistributorTariff } from '../api/aneel';
+import { FLAG_DATASET_URL, TARIFF_DATASET_URL } from '../api/aneel';
 import type { FlagData, Provenance, TariffData } from '../api/solaris';
 import type { AsyncState } from '../hooks/useAsync';
 import { DISTRIBUTOR_CATALOG, distributorOptions } from '../data/distributorCatalog';
@@ -6,19 +6,8 @@ import { fmtBRL, fmtDate, fmtDateTime, fmtMonthYear, fmtNumber, fmtPct } from '.
 import type { TariffSettings } from '../model';
 import { Check, NumberField, Section } from './controls';
 import { DistributorSelect } from './DistributorSelect';
-
-export interface Pricing {
-  source: 'aneel' | 'manual' | 'example';
-  tariff: DistributorTariff | null;
-  /** R$/kWh before taxes (TUSD + TE). */
-  baseTariff: number | null;
-  flagSurcharge: number;
-  taxRate: number;
-  icmsPct: number;
-  finalPrice: number;
-  /** Yearly tariff trend from ANEEL history. */
-  trend: number | null;
-}
+import type { Pricing } from '../lib/pricing';
+export type { Pricing } from '../lib/pricing';
 
 const FLAG_COLORS: Record<string, string> = {
   Verde: 'var(--good)',
@@ -43,13 +32,14 @@ export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing,
   const current = pricing.tariff?.current;
   const manual = settings.manualPrice !== null;
   const options = distributorOptions(list, settings.distributor);
+  const national = pricing.nationalAverage;
 
   return (
     <Section title="Tarifa de energia" note={`${fmtBRL(pricing.finalPrice, 2)}/kWh`}>
       {tariffs.status === 'loading' && !tariffs.data && <p className="notice">Carregando tarifas homologadas da ANEEL…</p>}
       {tariffs.status === 'error' && (
         <div className="notice notice-error notice-row">
-          <span>Não foi possível consultar a ANEEL ({tariffs.error}). Informe a tarifa da sua conta de luz abaixo.</span>
+          <span>Não foi possível consultar as tarifas das distribuidoras ({tariffs.error}).{!national && !manual && ' Informe a tarifa da sua conta de luz abaixo.'}</span>
           <button type="button" className="btn btn-small" onClick={tariffs.retry}>
             Tentar de novo
           </button>
@@ -67,10 +57,24 @@ export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing,
         <a href={DISTRIBUTOR_CATALOG.sourceUrl} target="_blank" rel="noreferrer">ANEEL</a>
         {' '}· base de {fmtDate(DISTRIBUTOR_CATALOG.sourceDate)}
       </p>
-      {settings.distributor && !current && tariffs.status !== 'loading' && (
+      {settings.distributor && !current && !national && !manual && tariffs.status !== 'loading' && (
         <p className="notice notice-warning">
           Tarifa vigente de {settings.distributor} indisponível. Informe o preço do kWh da sua conta de luz para estimar a economia.
         </p>
+      )}
+
+      {national && (
+        <div className="notice notice-warning">
+          <p>Usando a média nacional residencial de {national.referenceYear}: <strong>{fmtBRL(national.price, 4)}/kWh</strong>,
+            {' '}{settings.distributor ? 'pois a tarifa vigente da distribuidora não está disponível.' :
+              'enquanto você não seleciona uma distribuidora com tarifa disponível.'}</p>
+          <p>A média já inclui impostos e as bandeiras observadas no ano. É uma referência histórica para a estimativa de economia;
+            {' '}o preço da sua conta de luz pode ser diferente.</p>
+          <p className="source">
+            <a href={national.sourceUrl} target="_blank" rel="noreferrer">ANEEL/SAMP</a>
+            {' '}· ano completo {national.referenceYear} · base de {fmtDate(national.sourceDate)} · coletada em {fmtDateTime(national.fetchedAt)}
+          </p>
+        </div>
       )}
 
       {current && (
@@ -104,6 +108,7 @@ export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing,
         </p>
       )}
 
+      {!national && <>
       <div className="field-grid">
         <NumberField
           label="ICMS"
@@ -155,6 +160,7 @@ export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing,
           </p>
         )}
       </div>
+      </>}
 
       <Check
         checked={manual}

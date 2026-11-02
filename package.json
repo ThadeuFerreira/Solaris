@@ -11,6 +11,7 @@
     "test": "vitest run",
     "update:distributors": "node scripts/update-distributors.mjs",
     "collect:history": "tsx server/collectEnergyHistory.ts",
+    "collect:samp": "tsx server/collectSamp.ts",
     "start": "tsx server/index.ts"
   },
   "dependencies": {

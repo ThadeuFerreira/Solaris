@@ -11,6 +11,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { FlagStatus, TariffPoint } from '../src/api/aneel';
 import { resolutionDate, TARIFF_DATASET_URL, TARIFF_RESOURCE_ID } from '../src/api/aneel';
 import type { HistoricalTariff } from './energyHistory';
+import type { AnnualTariffAverage } from '../src/api/samp';
 
 const MIGRATIONS = [
   `
@@ -47,12 +48,14 @@ const MIGRATIONS = [
   `,
   readFileSync(new URL('./migrations/002-energy-history.sql', import.meta.url), 'utf8'),
   readFileSync(new URL('./migrations/003-tariff-resolutions.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('./migrations/004-samp-quality.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('./migrations/005-samp-methodology.sql', import.meta.url), 'utf8'),
 ];
 
 export function openDatabase(path: string): DatabaseSync {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
   for (let v = version; v < MIGRATIONS.length; v++) {
     transaction(db, () => {
@@ -175,6 +178,38 @@ export class Store {
       list.push({ start: r.start_date, end: r.end_date, tusd: r.tusd, te: r.te, total: r.tusd + r.te, resolution: r.resolution });
     }
     return result;
+  }
+
+  saveAnnualTariffAverages(averages: AnnualTariffAverage[]): void {
+    transaction(this.db, () => {
+      const upsert = this.db.prepare(`INSERT INTO annual_tariff_averages
+        (geography_type, geography_code, reference_year, consumer_class, tax_basis, includes_flags,
+         tariff_microrl_per_kwh, complete_year, data_through, methodology, source_url, source_resource_id, source_date, fetched_at, quality_status)
+        VALUES ('country', 'BR', ?, 'Residencial', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'validated')
+        ON CONFLICT(geography_type, geography_code, reference_year, consumer_class, tax_basis, includes_flags)
+        DO UPDATE SET tariff_microrl_per_kwh=excluded.tariff_microrl_per_kwh, complete_year=excluded.complete_year,
+        data_through=excluded.data_through, methodology=excluded.methodology, source_url=excluded.source_url,
+        source_resource_id=excluded.source_resource_id, source_date=excluded.source_date, fetched_at=excluded.fetched_at,
+        quality_status=excluded.quality_status`);
+      for (const row of averages) upsert.run(row.referenceYear, row.taxBasis, row.includesFlags ? 1 : 0,
+        Math.round(row.price * 1e6), row.completeYear ? 1 : 0, row.dataThrough, row.methodology,
+        row.sourceUrl, row.sourceResourceId, row.sourceDate, row.fetchedAt);
+    });
+  }
+
+  readAnnualTariffAverages(): AnnualTariffAverage[] {
+    const rows = this.db.prepare(`SELECT reference_year, tariff_microrl_per_kwh, tax_basis, includes_flags,
+      complete_year, data_through, methodology, source_url, source_resource_id, source_date, fetched_at
+      FROM annual_tariff_averages WHERE geography_type='country' AND geography_code='BR'
+      AND consumer_class='Residencial' AND quality_status='validated' ORDER BY reference_year DESC, tax_basis`).all() as {
+      reference_year: number; tariff_microrl_per_kwh: number; tax_basis: AnnualTariffAverage['taxBasis'];
+      includes_flags: number; complete_year: number; data_through: string; methodology: string;
+      source_url: string; source_resource_id: string; source_date: string; fetched_at: string;
+    }[];
+    return rows.map((row) => ({ referenceYear: row.reference_year, price: row.tariff_microrl_per_kwh / 1e6,
+      taxBasis: row.tax_basis, includesFlags: row.includes_flags === 1, completeYear: row.complete_year === 1,
+      dataThrough: row.data_through, methodology: row.methodology, sourceUrl: row.source_url,
+      sourceResourceId: row.source_resource_id, sourceDate: row.source_date, fetchedAt: row.fetched_at }));
   }
 
   /** Upserts flags so months that dropped out of the latest download are kept. */

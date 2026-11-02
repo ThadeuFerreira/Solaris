@@ -5,6 +5,7 @@
 //   GET  /api/health
 //   GET  /api/tariffs                 ANEEL B1 tariffs, refreshed every 24 h
 //   GET  /api/flag                    current ANEEL tariff flag, refreshed every 24 h
+//   GET  /api/annual-tariffs          collected national residential SAMP averages
 //   GET  /api/solar?lat=&lng=         NASA POWER climatology, cached per 0.1° cell
 //   POST /api/simulations             save a simulation → { id }
 //   GET  /api/simulations/:id         load a saved simulation
@@ -181,6 +182,7 @@ export function createApiHandler(options: ApiOptions): ApiHandler {
     const method = req.method ?? 'GET';
     if (method === 'GET' && path === '/api/health') return sendJson(res, 200, { ok: true });
     if (method === 'GET' && path === '/api/tariffs') return tariffs(res);
+    if (method === 'GET' && path === '/api/annual-tariffs') return sendJson(res, 200, { averages: store.readAnnualTariffAverages() });
     if (method === 'GET' && path === '/api/flag') return flag(res);
     if (method === 'GET' && path === '/api/solar') return solar(res, url.searchParams);
     if (method === 'POST' && path === '/api/simulations') return saveSimulation(req, res);

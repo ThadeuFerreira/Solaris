@@ -1,9 +1,8 @@
 import type L from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { tariffTrend } from './api/aneel';
 import { isAbort } from './api/http';
 import { reverseGeocode, type Place } from './api/nominatim';
-import { loadFlag, loadSimulation, loadSolar, loadTariffs, saveSimulation } from './api/solaris';
+import { BUNDLED_ANNUAL_TARIFFS, loadAnnualTariffs, loadFlag, loadSimulation, loadSolar, loadTariffs, saveSimulation } from './api/solaris';
 import { CashFlowChart, IrradianceChart, LifetimeProductionChart, MonthlyProductionChart, TariffHistoryChart } from './components/charts/Charts';
 import { Section } from './components/controls';
 import { FinanceSettingsCard } from './components/FinanceSettingsCard';
@@ -15,9 +14,10 @@ import { SearchBar } from './components/SearchBar';
 import { TariffSettingsCard, type Pricing } from './components/TariffSettingsCard';
 import { TopBar, type DetailView } from './components/TopBar';
 import { guessDistributor, ICMS_BY_UF } from './data/distributors';
-import { distributorOptions, tariffIsCurrent } from './data/distributorCatalog';
+import { distributorOptions } from './data/distributorCatalog';
 import { CUSTOM_PANEL_ID, makeCustomPanel, PANELS } from './data/panels';
 import { useAsync } from './hooks/useAsync';
+import { calculatePricing } from './lib/pricing';
 import { fmtNumber } from './lib/format';
 import { centroidOf, footprintsInside, localFrame, type LatLng } from './lib/geometry';
 import { infrastructureFootprints, type Infrastructure } from './lib/infrastructure';
@@ -29,7 +29,6 @@ import {
   DEFAULT_FINANCE_SETTINGS,
   DEFAULT_PANEL_SETTINGS,
   DEFAULT_TARIFF_SETTINGS,
-  EXAMPLE_PRICE_PER_KWH,
   FALLBACK_ICMS_PCT,
   FALLBACK_TARIFF_INCREASE_PCT,
   type FinanceSettings,
@@ -120,6 +119,7 @@ export default function App() {
 
   // ---------- Tariff ----------
   const tariffsState = useAsync('tariffs', loadTariffs);
+  const annualTariffsState = useAsync('annual-tariffs', loadAnnualTariffs);
   const flagState = useAsync('flag', loadFlag);
   const tariffList = tariffsState.data?.tariffs;
   const currentFlag = flagState.data?.flag ?? null;
@@ -132,23 +132,10 @@ export default function App() {
   }, [tariffSettings.distributorPinned, tariffSettings.distributor, tariffList, place, tariffDate]);
 
   const pricing: Pricing = useMemo(() => {
-    const tariff = tariffList?.find((t) => t.distributor === distributor && tariffIsCurrent(t.current, tariffDate)) ?? null;
     const icmsPct = tariffSettings.icmsPct ?? (place?.uf ? ICMS_BY_UF[place.uf] : undefined) ?? FALLBACK_ICMS_PCT;
-    const taxRate = (icmsPct + tariffSettings.pisCofinsPct) / 100;
-    const flagSurcharge = tariffSettings.includeFlag && currentFlag ? currentFlag.surcharge : 0;
-    const baseTariff = tariff?.current.total ?? null;
-    const computed = baseTariff !== null && taxRate < 1 ? (baseTariff + flagSurcharge) / (1 - taxRate) : null;
-    return {
-      source: tariffSettings.manualPrice !== null ? 'manual' : computed !== null ? 'aneel' : 'example',
-      tariff,
-      baseTariff,
-      flagSurcharge,
-      taxRate,
-      icmsPct,
-      finalPrice: tariffSettings.manualPrice ?? computed ?? EXAMPLE_PRICE_PER_KWH,
-      trend: tariff ? tariffTrend(tariff.history) : null,
-    };
-  }, [tariffList, distributor, tariffSettings, place, currentFlag, tariffDate]);
+    return calculatePricing({ tariffs: tariffList ?? [], settings: { ...tariffSettings, distributor },
+      icmsPct, flag: currentFlag, averages: annualTariffsState.data?.averages ?? BUNDLED_ANNUAL_TARIFFS.averages, today: tariffDate });
+  }, [tariffList, distributor, tariffSettings, place, currentFlag, tariffDate, annualTariffsState.data]);
 
   const tariffIncrease =
     financeSettings.tariffIncreasePct !== null

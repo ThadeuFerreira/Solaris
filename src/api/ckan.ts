@@ -9,9 +9,10 @@ interface Page {
 /** Fetch a complete, consistently ordered snapshot; never accept a partial page set. */
 export async function fetchCkanRecords(
   resourceId: string,
-  filters: Record<string, string> = {},
+  filters: Record<string, string | string[]> = {},
   signal?: AbortSignal,
   pageSize = 5000,
+  fields?: string[],
 ): Promise<CkanRecord[]> {
   const records: CkanRecord[] = [];
   const ids = new Set<unknown>();
@@ -22,6 +23,7 @@ export async function fetchCkanRecords(
       resource_id: resourceId, filters: JSON.stringify(filters), sort: '_id asc',
       limit: String(pageSize), offset: String(offset),
     });
+    if (fields) params.set('fields', [...new Set(['_id', 'DatGeracaoConjuntoDados', ...fields])].join(','));
     const data = await fetchJson<Page>(`https://dadosabertos.aneel.gov.br/api/3/action/datastore_search?${params}`, {
       signal, timeoutMs: 30000,
     });

@@ -1,7 +1,8 @@
 -- DESENHO DE REFERÊNCIA, não executar como migração. SQLite.
 -- Implementação B1: server/migrations/002-energy-history.sql e 003-tariff-resolutions.sql.
 -- A coleta de tarifas e bandeiras já está implementada por npm run collect:history.
--- A tabela de médias anuais foi criada, mas a ingestão SAMP ainda está pendente.
+-- A ingestão SAMP está implementada em server/samp.ts: npm run collect:samp.
+-- São liberados apenas anos completos que passam nas verificações de qualidade.
 -- O desenho abaixo permite múltiplos perfis para uma expansão futura; a tabela
 -- atual aceita exclusivamente o recorte residencial convencional B1 validado.
 -- API validada em 2026-11-02, via GET sem chave:
@@ -95,9 +96,10 @@ CREATE TABLE annual_tariff_averages (
 -- 7. A UI informa fonte, vigência/ano e se usa dado antigo ou média nacional.
 --
 -- Prioridade de preço: valor manual da conta > tarifa vigente da selecionada >
--- última tarifa conhecida (rotulada histórica) > média nacional residencial do
--- último ano completo (rotulada estimativa). A média nacional ainda NÃO está
--- implementada no cálculo; hoje a UI identifica explicitamente o valor de exemplo.
+-- média nacional residencial do último ano completo validado (rotulada estimativa).
+-- A média é receita faturada / Energia TE. Receita Energia já inclui bandeiras;
+-- a receita de bandeiras separada não deve ser somada outra vez.
+-- A média com impostos soma apenas os tributos reportados separadamente.
 -- Não reaplicar tributos ou bandeira quando já estiverem na média escolhida.
 -- Geração solar x tarifa é valor bruto de referência; economia efetiva depende
 -- de autoconsumo, compensação, cobrança de rede e mínimo faturável.
