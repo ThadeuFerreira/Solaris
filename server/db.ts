@@ -5,10 +5,12 @@
 //  - NASA POWER climatologies, cached per rounded location (they don't change)
 //  - Saved simulations, so a drawn roof and its settings can be shared by link
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { FlagStatus, TariffPoint } from '../src/api/aneel';
+import { resolutionDate, TARIFF_DATASET_URL, TARIFF_RESOURCE_ID } from '../src/api/aneel';
+import type { HistoricalTariff } from './energyHistory';
 
 const MIGRATIONS = [
   `
@@ -43,6 +45,8 @@ const MIGRATIONS = [
     created_at TEXT NOT NULL
   );
   `,
+  readFileSync(new URL('./migrations/002-energy-history.sql', import.meta.url), 'utf8'),
+  readFileSync(new URL('./migrations/003-tariff-resolutions.sql', import.meta.url), 'utf8'),
 ];
 
 export function openDatabase(path: string): DatabaseSync {
@@ -87,15 +91,74 @@ export class Store {
     this.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
   }
 
-  /** Replaces the whole tariff table with a fresh download. */
-  replaceTariffs(byDistributor: Map<string, TariffPoint[]>, fetchedAt: string): void {
+  /** Preserve periods missing from a later upstream response. */
+  saveTariffs(byDistributor: Map<string, TariffPoint[]>, fetchedAt: string): void {
     transaction(this.db, () => {
-      this.db.exec('DELETE FROM tariffs');
       const insert = this.db.prepare(
-        'INSERT INTO tariffs (distributor, start_date, end_date, tusd, te, resolution) VALUES (?, ?, ?, ?, ?, ?)',
+        `INSERT INTO tariffs (distributor, start_date, end_date, tusd, te, resolution) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(distributor, start_date) DO UPDATE SET end_date=excluded.end_date,
+           tusd=excluded.tusd, te=excluded.te, resolution=excluded.resolution`,
       );
       for (const [distributor, points] of byDistributor) {
         for (const p of points) insert.run(distributor, p.start, p.end, p.tusd, p.te, p.resolution);
+      }
+      this.setMeta('tariffs_fetched_at', fetchedAt);
+    });
+  }
+
+  startEnergyImport(dataset: string, resourceId: string, startedAt: string): number {
+    const result = this.db.prepare(
+      "INSERT INTO energy_import_runs (dataset, resource_id, started_at, status) VALUES (?, ?, ?, 'running')",
+    ).run(dataset, resourceId, startedAt);
+    return Number(result.lastInsertRowid);
+  }
+
+  finishEnergyImport(id: number, result: {
+    status: 'completed' | 'failed'; finishedAt: string; received?: number; saved?: number;
+    sourceDate?: string; snapshotPath?: string; sha256?: string; error?: string;
+  }): void {
+    this.db.prepare(`UPDATE energy_import_runs SET status=?, finished_at=?, records_received=?, records_saved=?,
+      source_date=?, snapshot_path=?, snapshot_sha256=?, error=? WHERE id=?`).run(
+      result.status, result.finishedAt, result.received ?? null, result.saved ?? null, result.sourceDate ?? null,
+      result.snapshotPath ?? null, result.sha256 ?? null, result.error ?? null, id,
+    );
+  }
+
+  /** Import validated B1 rows and the API-compatible cache in one transaction. */
+  saveTariffHistory(rows: HistoricalTariff[], fetchedAt: string): void {
+    transaction(this.db, () => {
+      const identity = this.db.prepare(`INSERT INTO distributors (cnpj, agent_code, source_url, source_date, fetched_at)
+        VALUES (?, ?, ?, ?, ?) ON CONFLICT(cnpj) DO UPDATE SET agent_code=excluded.agent_code,
+        source_date=excluded.source_date, fetched_at=excluded.fetched_at RETURNING id`);
+      const alias = this.db.prepare('INSERT OR IGNORE INTO distributor_aliases (agent_code, distributor_id) VALUES (?, ?)');
+      const insert = this.db.prepare(`INSERT INTO tariff_history
+        (distributor_id, agent_code, start_date, end_date, tusd_microrl_per_kwh, te_microrl_per_kwh,
+         resolution, source_resource_id, source_date, first_seen_at, last_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(distributor_id, start_date, resolution) DO UPDATE SET agent_code=excluded.agent_code,
+          end_date=excluded.end_date, tusd_microrl_per_kwh=excluded.tusd_microrl_per_kwh,
+          te_microrl_per_kwh=excluded.te_microrl_per_kwh, resolution=excluded.resolution,
+          source_date=excluded.source_date, last_seen_at=excluded.last_seen_at`);
+      const cache = this.db.prepare(`INSERT INTO tariffs (distributor, start_date, end_date, tusd, te, resolution)
+        VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(distributor, start_date) DO UPDATE SET
+        end_date=excluded.end_date, tusd=excluded.tusd, te=excluded.te, resolution=excluded.resolution`);
+      // Sorting means the identity ends up with its latest known name.
+      for (const row of [...rows].sort((a, b) =>
+        a.start.localeCompare(b.start) || resolutionDate(a.resolution).localeCompare(resolutionDate(b.resolution)))) {
+        const { id } = identity.get(row.cnpj, row.distributor, TARIFF_DATASET_URL, row.sourceDate, fetchedAt) as { id: number };
+        alias.run(row.distributor, id);
+        insert.run(id, row.distributor, row.start, row.end || null, row.tusdMicrorl, row.teMicrorl,
+          row.resolution, TARIFF_RESOURCE_ID, row.sourceDate, fetchedAt, fetchedAt);
+      }
+      // Rebuild choices from the accumulated acts, so a reduced response cannot
+      // overwrite an amendment retained from an earlier import with its old act.
+      const accumulated = this.db.prepare(`SELECT agent_code, start_date, end_date,
+        tusd_microrl_per_kwh AS tusd, te_microrl_per_kwh AS te, resolution FROM tariff_history`).all() as {
+        agent_code: string; start_date: string; end_date: string | null; tusd: number; te: number; resolution: string;
+      }[];
+      for (const row of accumulated.sort((a, b) =>
+        a.start_date.localeCompare(b.start_date) || resolutionDate(a.resolution).localeCompare(resolutionDate(b.resolution)))) {
+        cache.run(row.agent_code, row.start_date, row.end_date ?? '', row.tusd / 1e6, row.te / 1e6, row.resolution);
       }
       this.setMeta('tariffs_fetched_at', fetchedAt);
     });

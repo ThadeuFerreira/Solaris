@@ -30,12 +30,48 @@ PVGIS (EU JRC) was considered, but its API does not allow browser (AJAX) calls.
 
 ## Server and SQLite
 
+The distributor selector includes a bundled ANEEL catalogue with CNPJs, so it
+works even before tariff loading or during an upstream outage. Search accepts
+agent names (without requiring accents) or CNPJs. Explicit selections are kept
+when the map location changes and in saved simulations. The catalogue contains
+residential B1 conventional distributors with a valid tariff on its reference
+date; it is not a complete registry of every energy-market agent.
+
+Run `npm run update:distributors` to refresh `src/data/distributor-catalog.json`
+from the official API, with pagination, validity filtering and CNPJ deduplication.
+Attribution: ANEEL Dados Abertos, ODbL 1.0; the snapshot records its source URL,
+source date and catalogue reference date. A catalogue entry does not supply a
+price: missing or expired tariffs still require a bill price and the UI labels
+the example value explicitly.
+
+Run `npm run collect:history` to backfill all residential B1 conventional tariffs
+and tariff flags into SQLite (`SOLARIS_DB`, default `data/solaris.db`). Each
+dataset is fully paginated and validated before a transactional upsert. Older
+periods and acts are retained when absent from later downloads. Distinct acts
+for the same validity date are kept; the UI cache uses the most recently dated
+act. Exact duplicate source rows are collapsed. Missing act descriptions remain
+empty; they are not invented.
+
+Migrations in [`server/migrations/`](server/migrations/) add distributor identities
+by CNPJ, aliases, historical tariffs, annual averages and collection-run records.
+Tariff amounts are stored as integer millionths of R$/kWh. The existing `tariffs`
+cache remains compatible with the UI and now uses upserts instead of deletion.
+Every collection archives the source JSON with its SHA-256 checksum under
+`data/aneel-snapshots/` and records success/failure in `energy_import_runs`.
+Both the database and raw snapshots are local data excluded from Git. Repeat the
+command to refresh; no background scheduler is installed by this command.
+
+[`docs/energy-data-plan.sql`](docs/energy-data-plan.sql) describes the broader
+multi-profile design and fallback policy; it is not an executable migration.
+The `annual_tariff_averages` table is ready, but annual averages from SAMP still
+need a validated consumption/receipt importer before use in savings estimates.
+
 The server (`server/`) uses Node's built-in `node:sqlite`, so there's no
 native module to compile. It exposes:
 
 | Endpoint | What it does |
 |---|---|
-| `GET /api/tariffs` | ANEEL residential B1 tariffs with history. Downloaded once a day and stored in the `tariffs` table. If ANEEL is down, it serves the last copy marked `stale`. |
+| `GET /api/tariffs` | ANEEL residential B1 tariffs with history. Downloaded once a day and upserted in the `tariffs` table, retaining older periods. If ANEEL is down, it serves the last copy marked `stale`. |
 | `GET /api/flag` | Current tariff flag (`tariff_flags` table), refreshed daily |
 | `GET /api/solar?lat=&lng=` | NASA POWER climatology, cached per 0.1° cell (`solar_climatology` table). The climatology doesn't change, so the cache never expires. |
 | `POST /api/simulations` | Saves the drawn area and all settings and returns an id. The UI turns it into a `?sim=<id>` link. |

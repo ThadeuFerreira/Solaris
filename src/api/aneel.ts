@@ -8,6 +8,7 @@
 // that server is unreachable, directly by the browser.
 
 import { fetchJson, isAbort } from './http';
+import { fetchCkanRecords } from './ckan';
 
 const BASE = 'https://dadosabertos.aneel.gov.br/api/3/action';
 
@@ -96,6 +97,15 @@ export interface DistributorTariff {
   history: TariffPoint[];
 }
 
+/** Date of a published act, used to resolve amendments sharing a validity date. */
+export function resolutionDate(resolution: string): string {
+  const match = norm(resolution).match(/(\d{1,2})[º°]?\s+DE\s+([A-Z]+)\s+DE\s+(\d{4})/);
+  if (!match) return '';
+  const months = ['JANEIRO', 'FEVEREIRO', 'MARCO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
+  const month = months.indexOf(match[2]) + 1;
+  return month ? `${match[3]}-${String(month).padStart(2, '0')}-${match[1].padStart(2, '0')}` : '';
+}
+
 /**
  * Reduces raw tariff rows to one residential B1 conventional tariff per
  * distributor and validity period.
@@ -136,7 +146,9 @@ export function parseTariffRecords(records: CkanRecord[]): Map<string, TariffPoi
     let periods = byDistributor.get(distributor);
     if (!periods) byDistributor.set(distributor, (periods = new Map()));
     const existing = periods.get(start);
-    if (!existing || score > existing.score) periods.set(start, { point, score });
+    if (!existing || score > existing.score || (score === existing.score && resolutionDate(point.resolution) > resolutionDate(existing.point.resolution))) {
+      periods.set(start, { point, score });
+    }
   }
 
   const result = new Map<string, TariffPoint[]>();
@@ -183,23 +195,19 @@ export function tariffTrend(history: TariffPoint[], years = 8): number | null {
   return (last.total / first.total) ** (1 / span) - 1;
 }
 
-/** Downloads the full residential B1 history for every distributor. */
+export const RESIDENTIAL_FILTERS = {
+  DscBaseTarifaria: 'Tarifa de Aplicação',
+  DscSubGrupo: 'B1',
+  DscModalidadeTarifaria: 'Convencional',
+  DscClasse: 'Residencial',
+  DscSubClasse: 'Residencial',
+  DscDetalhe: 'Não se aplica',
+  NomPostoTarifario: 'Não se aplica',
+};
+
+/** Downloads all pages of residential B1 conventional history. */
 export async function fetchTariffRecords(signal?: AbortSignal): Promise<Map<string, TariffPoint[]>> {
-  const filters = {
-    DscBaseTarifaria: 'Tarifa de Aplicação',
-    DscSubGrupo: 'B1',
-    DscModalidadeTarifaria: 'Convencional',
-  };
-  const query = (f: Record<string, string>, sorted: boolean) => ({
-    resource_id: TARIFF_RESOURCE_ID,
-    filters: JSON.stringify(f),
-    limit: '32000',
-    ...(sorted ? { sort: 'DatInicioVigencia desc' } : {}),
-  });
-  const records = await firstNonEmpty(
-    [query({ ...filters, DscSubClasse: 'Residencial' }, true), query(filters, true), query(filters, false)],
-    signal,
-  );
+  const records = await fetchCkanRecords(TARIFF_RESOURCE_ID, RESIDENTIAL_FILTERS, signal);
   const parsed = parseTariffRecords(records);
   if (parsed.size === 0) throw new Error('ANEEL: nenhuma tarifa residencial encontrada');
   return parsed;

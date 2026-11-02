@@ -1,9 +1,11 @@
 import { FLAG_DATASET_URL, TARIFF_DATASET_URL, type DistributorTariff } from '../api/aneel';
 import type { FlagData, Provenance, TariffData } from '../api/solaris';
 import type { AsyncState } from '../hooks/useAsync';
+import { DISTRIBUTOR_CATALOG, distributorOptions } from '../data/distributorCatalog';
 import { fmtBRL, fmtDate, fmtDateTime, fmtMonthYear, fmtNumber, fmtPct } from '../lib/format';
 import type { TariffSettings } from '../model';
 import { Check, NumberField, Section } from './controls';
+import { DistributorSelect } from './DistributorSelect';
 
 export interface Pricing {
   source: 'aneel' | 'manual' | 'example';
@@ -40,6 +42,7 @@ export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing,
   const currentFlag = flag.data?.flag ?? null;
   const current = pricing.tariff?.current;
   const manual = settings.manualPrice !== null;
+  const options = distributorOptions(list, settings.distributor);
 
   return (
     <Section title="Tarifa de energia" note={`${fmtBRL(pricing.finalPrice, 2)}/kWh`}>
@@ -53,21 +56,21 @@ export function TariffSettingsCard({ settings, onChange, tariffs, flag, pricing,
         </div>
       )}
 
-      {list.length > 0 && (
-        <label className="field">
-          <span>Distribuidora{placeLabel ? ` (local: ${placeLabel})` : ''}</span>
-          <select
-            value={settings.distributor ?? ''}
-            onChange={(e) => onChange({ distributor: e.target.value || null, distributorPinned: true })}
-          >
-            <option value="">Selecione…</option>
-            {list.map((t) => (
-              <option key={t.distributor} value={t.distributor}>
-                {t.distributor}
-              </option>
-            ))}
-          </select>
-        </label>
+      <DistributorSelect
+        options={options}
+        value={settings.distributor}
+        onChange={(distributor) => onChange({ distributor, distributorPinned: true })}
+        placeLabel={placeLabel}
+      />
+      <p className="source">
+        Catálogo de distribuidoras residenciais ·{' '}
+        <a href={DISTRIBUTOR_CATALOG.sourceUrl} target="_blank" rel="noreferrer">ANEEL</a>
+        {' '}· base de {fmtDate(DISTRIBUTOR_CATALOG.sourceDate)}
+      </p>
+      {settings.distributor && !current && tariffs.status !== 'loading' && (
+        <p className="notice notice-warning">
+          Tarifa vigente de {settings.distributor} indisponível. Informe o preço do kWh da sua conta de luz para estimar a economia.
+        </p>
       )}
 
       {current && (

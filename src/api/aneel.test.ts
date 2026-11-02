@@ -50,6 +50,14 @@ describe('ANEEL parsing', () => {
     expect(tariffTrend(history)).toBeCloseTo(0.06, 3);
   });
 
+  it('prefers the latest published act for amendments with the same validity date', () => {
+    const old = row({ DscREH: 'RESOLUÇÃO Nº 1, DE 6 DE ABRIL DE 2026', VlrTUSD: '200,00' });
+    const revised = row({ DscREH: 'RESOLUÇÃO Nº 2, DE 13 DE JULHO DE 2026', VlrTUSD: '300,00' });
+    for (const records of [[old, revised], [revised, old]]) {
+      expect(buildTariffs(records, '2026-11-02')[0].current.tusd).toBe(0.3);
+    }
+  });
+
   it('normalises flag surcharges in any unit', () => {
     expect(surchargeToKWh(18.85, 'Amarela')).toBeCloseTo(0.01885);
     expect(surchargeToKWh(1.885, 'Amarela')).toBeCloseTo(0.01885);

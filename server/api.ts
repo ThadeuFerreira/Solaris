@@ -126,7 +126,7 @@ export function createApiHandler(options: ApiOptions): ApiHandler {
   }
 
   async function tariffs(res: ServerResponse) {
-    const status = await ensureFresh('tariffs', async (at) => store.replaceTariffs(await fetchTariffs(), at));
+    const status = await ensureFresh('tariffs', async (at) => store.saveTariffs(await fetchTariffs(), at));
     const today = now().toISOString().slice(0, 10);
     sendJson(res, 200, { ...status, tariffs: assembleTariffs(store.readTariffs(), today) });
   }

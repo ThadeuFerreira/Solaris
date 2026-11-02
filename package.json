@@ -9,6 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
+    "update:distributors": "node scripts/update-distributors.mjs",
+    "collect:history": "tsx server/collectEnergyHistory.ts",
     "start": "tsx server/index.ts"
   },
   "dependencies": {

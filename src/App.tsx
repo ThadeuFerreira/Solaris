@@ -15,6 +15,7 @@ import { SearchBar } from './components/SearchBar';
 import { TariffSettingsCard, type Pricing } from './components/TariffSettingsCard';
 import { TopBar, type DetailView } from './components/TopBar';
 import { guessDistributor, ICMS_BY_UF } from './data/distributors';
+import { distributorOptions, tariffIsCurrent } from './data/distributorCatalog';
 import { CUSTOM_PANEL_ID, makeCustomPanel, PANELS } from './data/panels';
 import { useAsync } from './hooks/useAsync';
 import { fmtNumber } from './lib/format';
@@ -69,6 +70,7 @@ export default function App() {
   const [buildLength, setBuildLength] = useState(3);
   const [buildMessage, setBuildMessage] = useState('Selecione uma ferramenta e clique no mapa.');
   const [tariffSettings, setTariffSettings] = useState<TariffSettings>(DEFAULT_TARIFF_SETTINGS);
+  const [tariffDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }));
   const [financeSettings, setFinanceSettings] = useState<FinanceSettings>(DEFAULT_FINANCE_SETTINGS);
   const [detailView, setDetailView] = useState<DetailView>('none');
   const [geoError, setGeoError] = useState<string | null>(null);
@@ -125,12 +127,12 @@ export default function App() {
 
   const distributor = useMemo(() => {
     if (tariffSettings.distributorPinned) return tariffSettings.distributor;
-    const agents = tariffList?.map((t) => t.distributor) ?? [];
+    const agents = distributorOptions(tariffList ?? [], null, tariffDate).map((entry) => entry.distributor);
     return guessDistributor(agents, place?.uf ?? null, place?.city ?? null) ?? tariffSettings.distributor;
-  }, [tariffSettings.distributorPinned, tariffSettings.distributor, tariffList, place]);
+  }, [tariffSettings.distributorPinned, tariffSettings.distributor, tariffList, place, tariffDate]);
 
   const pricing: Pricing = useMemo(() => {
-    const tariff = tariffList?.find((t) => t.distributor === distributor) ?? null;
+    const tariff = tariffList?.find((t) => t.distributor === distributor && tariffIsCurrent(t.current, tariffDate)) ?? null;
     const icmsPct = tariffSettings.icmsPct ?? (place?.uf ? ICMS_BY_UF[place.uf] : undefined) ?? FALLBACK_ICMS_PCT;
     const taxRate = (icmsPct + tariffSettings.pisCofinsPct) / 100;
     const flagSurcharge = tariffSettings.includeFlag && currentFlag ? currentFlag.surcharge : 0;
@@ -146,7 +148,7 @@ export default function App() {
       finalPrice: tariffSettings.manualPrice ?? computed ?? EXAMPLE_PRICE_PER_KWH,
       trend: tariff ? tariffTrend(tariff.history) : null,
     };
-  }, [tariffList, distributor, tariffSettings, place, currentFlag]);
+  }, [tariffList, distributor, tariffSettings, place, currentFlag, tariffDate]);
 
   const tariffIncrease =
     financeSettings.tariffIncreasePct !== null
