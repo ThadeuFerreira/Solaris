@@ -1,3 +1,4 @@
+import type { TerrainProfile } from '../api/openMeteo';
 import { CUSTOM_PANEL_ID, PANELS, type PanelModel } from '../data/panels';
 import { compassName, fmtNumber } from '../lib/format';
 import type { LayoutPlan } from '../lib/simulate';
@@ -15,16 +16,16 @@ const COMPASS = [
   { label: 'NO', deg: 315 },
 ];
 
-
 interface Props {
   settings: PanelSettings;
   onChange: (patch: Partial<PanelSettings>) => void;
   panel: PanelModel;
   plan: LayoutPlan | null;
   suggestedPanels: number | null;
+  terrain?: TerrainProfile | null;
 }
 
-export function PanelSettingsCard({ settings, onChange, panel, plan, suggestedPanels }: Props) {
+export function PanelSettingsCard({ settings, onChange, panel, plan, suggestedPanels, terrain }: Props) {
   const isCustom = settings.panelId === CUSTOM_PANEL_ID;
   return (
     <Section title="Painéis e instalação" note={`${panel.powerW} W · ${fmtNumber(panel.efficiencyPct, 1)}%`}>
@@ -86,11 +87,16 @@ export function PanelSettingsCard({ settings, onChange, panel, plan, suggestedPa
         <span>Área máxima ocupada por painéis</span>
         <select value={settings.coveragePct} onChange={(e) => onChange({ coveragePct: Number(e.target.value) })}>
           {[100, 90, 80, 70, 60, 50, 40, 30, 20, 10].map((pct) => (
-            <option key={pct} value={pct}>{pct}% — reservar pelo menos {100 - pct}%</option>
+            <option key={pct} value={pct}>
+              {pct}% — reservar pelo menos {100 - pct}%
+            </option>
           ))}
         </select>
       </label>
-      <p className="hint">Limite da área horizontal coberta pelos módulos. Recuos e espaços entre painéis também contam como área livre; o desenho não define caminhos de acesso ou infraestrutura.</p>
+      <p className="hint">
+        Limite da área horizontal coberta pelos módulos. Recuos e espaços entre painéis também contam como área livre; o
+        desenho não define caminhos de acesso ou infraestrutura.
+      </p>
 
       <div className="field-grid">
         <Segmented
@@ -112,6 +118,37 @@ export function PanelSettingsCard({ settings, onChange, panel, plan, suggestedPa
           onChange={(orientation) => onChange({ orientation })}
         />
       </div>
+
+      {terrain && (
+        <div className="notice notice-row">
+          <span>
+            ⛰ Relevo (Open-Meteo): <strong>{fmtNumber(terrain.elevationM, 0)} m</strong> · inclinação{' '}
+            <strong>
+              {fmtNumber(terrain.slopePct, 1)}% ({fmtNumber(terrain.slopeDeg, 1)}°
+              {terrain.aspectDeg !== null ? ` ${compassName(terrain.aspectDeg)}` : ''})
+            </strong>
+          </span>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() =>
+              onChange({
+                tiltDeg: Math.min(60, Math.max(0, Math.round(terrain.slopeDeg))),
+                autoTilt: false,
+                ...(terrain.aspectDeg !== null ? { azimuthDeg: Math.round(terrain.aspectDeg) % 360 } : {}),
+              })
+            }
+          >
+            Usar relevo do solo
+          </button>
+        </div>
+      )}
+      {terrain && terrain.slopePct > 15 && (
+        <p className="notice notice-error">
+          Atenção: declividade do terreno de {fmtNumber(terrain.slopePct, 1)}% (&gt;15%). Instalações em solo podem exigir
+          terraplenagem ou estruturas especiais.
+        </p>
+      )}
 
       <div className="field">
         <span>
@@ -228,7 +265,9 @@ export function PanelSettingsCard({ settings, onChange, panel, plan, suggestedPa
           </span>
         </div>
       )}
-      <p className="hint">Perdas incluem sujeira, cabos, inversor e descasamento; o efeito da temperatura é calculado à parte.</p>
+      <p className="hint">
+        Perdas incluem sujeira, cabos, inversor e descasamento; o efeito da temperatura é calculado à parte.
+      </p>
     </Section>
   );
 }

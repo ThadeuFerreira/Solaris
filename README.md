@@ -14,6 +14,17 @@ Data comes from public APIs. A small Node server keeps a local SQLite
 database that caches them and stores saved simulations, so a roof and its
 settings can be shared by link.
 
+After drawing an area, select **Visualizar em 3D** to orbit, tilt and zoom around
+the project. The scene uses Three.js, Esri satellite imagery and an 8 × 8
+Open-Meteo elevation grid (Copernicus DEM). Panels use the layout's actual
+tilt and azimuth; ground-mounted projects include supports, equipment and roads.
+The date and **solar time** controls update the sun and shadows. Solar time is
+not the local civil clock. The relief slider exaggerates only terrain heights
+(1×–5×), leaving panel dimensions and angles unchanged; shadows at exaggerated
+scales are illustrative. DEM data cannot resolve roof shapes or building heights:
+flush roofs and equipment heights are schematic. Missing imagery or elevation
+uses a labelled fallback. Return to **Mapa 2D** to edit the project.
+
 ## Data sources
 
 | What | Source | Notes |

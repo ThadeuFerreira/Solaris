@@ -1,5 +1,4 @@
 import react from '@vitejs/plugin-react'
-import { fileURLToPath } from 'node:url'
 import { tsImport } from 'tsx/esm/api'
 import { defineConfig, type Connect, type Plugin } from 'vite'
 
@@ -10,7 +9,7 @@ import { defineConfig, type Connect, type Plugin } from 'vite'
 function solarisApi(): Plugin {
   let handler: Promise<Connect.NextHandleFunction> | null = null
   const load = async (): Promise<Connect.NextHandleFunction> => {
-    const entry = fileURLToPath(new URL('./server/app.ts', import.meta.url))
+    const entry = new URL('./server/app.ts', import.meta.url).href
     const { createSolarisApi } = await tsImport(entry, import.meta.url)
     return createSolarisApi(process.env.SOLARIS_DB ?? 'data/solaris.db')
   }
