@@ -2,6 +2,7 @@ import type L from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isAbort } from './api/http';
 import { reverseGeocode, type Place } from './api/nominatim';
+import { fetchTerrainProfile } from './api/openMeteo';
 import { BUNDLED_ANNUAL_TARIFFS, loadAnnualTariffs, loadFlag, loadSimulation, loadSolar, loadTariffs, saveSimulation } from './api/solaris';
 import { CashFlowChart, IrradianceChart, LifetimeProductionChart, MonthlyProductionChart, TariffHistoryChart } from './components/charts/Charts';
 import { Section } from './components/controls';
@@ -72,6 +73,8 @@ export default function App() {
   const [tariffDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }));
   const [financeSettings, setFinanceSettings] = useState<FinanceSettings>(DEFAULT_FINANCE_SETTINGS);
   const [detailView, setDetailView] = useState<DetailView>('none');
+  const [shadeElevation, setShadeElevation] = useState(false);
+  const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
   const [geoError, setGeoError] = useState<string | null>(null);
   const [sharedId] = useState(() => new URLSearchParams(window.location.search).get('sim'));
   const [share, setShare] = useState<ShareState>(() =>
@@ -104,6 +107,12 @@ export default function App() {
     const [lat, lng] = siteKey!.split(',').map(Number);
     return reverseGeocode(lat, lng, signal);
   });
+  const terrainKey = useMemo(
+    () => (site ? `${site.lat.toFixed(5)},${site.lng.toFixed(5)}:${polygon ? JSON.stringify(polygon) : ''}` : null),
+    [site, polygon],
+  );
+  const terrainState = useAsync(terrainKey, (signal) => fetchTerrainProfile([site!.lat, site!.lng], polygon, signal));
+  const terrain = terrainState.status === 'success' ? terrainState.data : null;
 
   const nasa = solarState.data?.key === siteKey ? solarState.data : undefined;
   const solar: SolarInput | null = useMemo(() => {
@@ -321,7 +330,23 @@ export default function App() {
                 Área de exemplo (12 × 8 m)
               </button>
               {polygon && (
-                <button type="button" className="btn btn-small" onClick={() => setPolygon(null)}>
+                <div className="segmented" role="group" aria-label="Modo de visualização">
+                  <button type="button" aria-pressed={mapMode === '2d'} onClick={() => setMapMode('2d')}>Mapa 2D</button>
+                  <button type="button" aria-pressed={mapMode === '3d'} onClick={() => { setBuildTool('none'); setMapMode('3d'); }}>Visualizar em 3D</button>
+                </div>
+              )}
+              {polygon && mapMode === '2d' && (
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  aria-pressed={shadeElevation}
+                  onClick={() => setShadeElevation((v) => !v)}
+                >
+                  {shadeElevation ? '✓ Sombrear elevação' : 'Sombrear elevação'}
+                </button>
+              )}
+              {polygon && (
+                <button type="button" className="btn btn-small" onClick={() => { setPolygon(null); setMapMode('2d'); }}>
                   Apagar área
                 </button>
               )}
@@ -345,7 +370,7 @@ export default function App() {
                 {share.status === 'done' && <a href={share.url}>{share.url}</a>}
               </p>
             )}
-            {polygon && mounting === 'rack' && (
+            {polygon && mounting === 'rack' && mapMode === '2d' && (
               <div className="card" style={{ padding: 10 }}>
                 <strong>Infraestrutura no solo — {buildTool === 'none' ? 'navegação' : 'modo de desenho ativo'}</strong>
                 <div className="map-toolbar" style={{ marginTop: 6 }}>
@@ -360,11 +385,18 @@ export default function App() {
               </div>
             )}
             <MapView
+              mode={mapMode}
+              tiltDeg={plan?.tiltDeg ?? tiltDeg}
+              azimuthDeg={plan?.azimuthDeg ?? azimuthDeg ?? 0}
+              mounting={mounting}
               polygon={polygon}
               onPolygonChange={setPolygon}
               panels={plan?.panels ?? []}
               usedCount={sim?.usedCount ?? 0}
               site={site}
+              terrain={terrain}
+              shadeElevation={shadeElevation}
+              onToggleShadeElevation={() => setShadeElevation((v) => !v)}
               flyTo={flyTo}
               onReady={onMapReady}
               infrastructure={activeInfrastructure}
@@ -438,6 +470,7 @@ export default function App() {
                   panel={panel}
                   plan={plan}
                   suggestedPanels={sim?.suggestedPanels ?? null}
+                  terrain={terrain}
                 />
               )}
 
@@ -474,7 +507,7 @@ export default function App() {
                   {plan && sim && <DetailTiles plan={plan} sim={sim} />}
                   {site && (
                     <Section title="Sol no local" note={annualGhi ? `${fmtNumber(annualGhi)} kWh/m²·ano` : undefined}>
-                      <SunFacts lat={site.lat} plan={plan} />
+                      <SunFacts lat={site.lat} plan={plan} terrain={terrain} />
                       <p className="source">
                         Irradiação: {solarSource}
                         {solarState.status === 'error' && (
@@ -508,7 +541,7 @@ export default function App() {
 
                   {site && (
                     <Section title="Sol no local" note={annualGhi ? `${fmtNumber(annualGhi)} kWh/m²·ano` : undefined}>
-                      <SunFacts lat={site.lat} plan={plan} />
+                      <SunFacts lat={site.lat} plan={plan} terrain={terrain} />
                       <p className="source">
                         Irradiação: {solarSource}
                         {solarState.status === 'error' && (
@@ -530,6 +563,7 @@ export default function App() {
                     panel={panel}
                     plan={plan}
                     suggestedPanels={sim?.suggestedPanels ?? null}
+                    terrain={terrain}
                   />
                   <TariffSettingsCard
                     settings={{ ...tariffSettings, distributor }}

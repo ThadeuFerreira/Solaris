@@ -1,3 +1,4 @@
+import type { TerrainProfile } from '../api/openMeteo';
 import { compassName, fmtBRL, fmtNumber, fmtPct, fmtYears } from '../lib/format';
 import type { LayoutPlan, Simulation } from '../lib/simulate';
 import { daylightHours, noonElevation } from '../lib/solar';
@@ -60,7 +61,15 @@ export function DetailTiles({ plan, sim }: { plan: LayoutPlan; sim: Simulation }
 }
 
 /** What the latitude alone tells about the sun at this site. */
-export function SunFacts({ lat, plan }: { lat: number; plan: LayoutPlan | null }) {
+export function SunFacts({
+  lat,
+  plan,
+  terrain,
+}: {
+  lat: number;
+  plan: LayoutPlan | null;
+  terrain?: TerrainProfile | null;
+}) {
   const south = lat < 0;
   const summer = south ? 355 : 172;
   const winter = south ? 172 : 355;
@@ -70,6 +79,20 @@ export function SunFacts({ lat, plan }: { lat: number; plan: LayoutPlan | null }
       <dd>
         {fmtNumber(Math.abs(lat), 4)}° {south ? 'S' : 'N'}
       </dd>
+      {terrain && (
+        <>
+          <dt>Altitude (Open-Meteo)</dt>
+          <dd>
+            {fmtNumber(terrain.elevationM, 0)} m
+            {terrain.vertices.length > 0 && ` (desnível ${fmtNumber(terrain.reliefM, 1)} m)`}
+          </dd>
+          <dt>Inclinação do terreno</dt>
+          <dd>
+            {fmtNumber(terrain.slopePct, 1)}% ({fmtNumber(terrain.slopeDeg, 1)}°
+            {terrain.aspectDeg !== null ? ` · face ${compassName(terrain.aspectDeg)}` : ' · plano'})
+          </dd>
+        </>
+      )}
       <dt>Sol ao meio-dia no verão / inverno</dt>
       <dd>
         {fmtNumber(Math.min(90, noonElevation(lat, summer)), 0)}° / {fmtNumber(noonElevation(lat, winter), 0)}°
